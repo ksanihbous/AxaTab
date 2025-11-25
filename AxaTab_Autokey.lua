@@ -1,290 +1,508 @@
 --==========================================================
 --  AxaTab_Autokey.lua
---  Env:
---    TAB_FRAME, HttpService, Players, CoreGui, StarterGui,
---    UserInputService, VirtualInputManager, PlayerGui (tambahan dari core)
+--  Tab: Autokey HG (Auto isi key + tekan Submit)
+--  Env dari core:
+--      TAB_FRAME = Frame konten tab Autokey (sudah dibuat di core AxaHub)
 --==========================================================
 
-local autokeyTabFrame = TAB_FRAME
+------------------- SERVICES / ENV -------------------
+local TAB_FRAME = TAB_FRAME  -- di-set sama core AxaHub sebelum require
 
-local akHeader = Instance.new("TextLabel")
-akHeader.Name = "Header"
-akHeader.Size = UDim2.new(1, -10, 0, 22)
-akHeader.Position = UDim2.new(0, 5, 0, 6)
-akHeader.BackgroundTransparency = 1
-akHeader.Font = Enum.Font.GothamBold
-akHeader.TextSize = 15
-akHeader.TextColor3 = Color3.fromRGB(40, 40, 60)
-akHeader.TextXAlignment = Enum.TextXAlignment.Left
-akHeader.Text = "🔑 Autokey HG"
-akHeader.Parent = autokeyTabFrame
+local Players          = game:GetService("Players")
+local CoreGui          = game:GetService("CoreGui")
+local StarterGui       = game:GetService("StarterGui")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local akDesc = Instance.new("TextLabel")
-akDesc.Name = "Desc"
-akDesc.Size = UDim2.new(1, -10, 0, 32)
-akDesc.Position = UDim2.new(0, 5, 0, 26)
-akDesc.BackgroundTransparency = 1
-akDesc.Font = Enum.Font.Gotham
-akDesc.TextSize = 12
-akDesc.TextColor3 = Color3.fromRGB(90, 90, 120)
-akDesc.TextXAlignment = Enum.TextXAlignment.Left
-akDesc.TextYAlignment = Enum.TextYAlignment.Top
-akDesc.TextWrapped = true
-akDesc.Text = "Pilih script, lalu Autokey akan isi key & klik tombol Submit pada ModernKeyUI (Spade Key System) otomatis."
-akDesc.Parent = autokeyTabFrame
+local LocalPlayer      = Players.LocalPlayer
 
-local akKeyLabel = Instance.new("TextLabel")
-akKeyLabel.Name = "KeyLabel"
-akKeyLabel.Size = UDim2.new(1, -10, 0, 20)
-akKeyLabel.Position = UDim2.new(0, 5, 0, 60)
-akKeyLabel.BackgroundTransparency = 1
-akKeyLabel.Font = Enum.Font.Gotham
-akKeyLabel.TextSize = 12
-akKeyLabel.TextColor3 = Color3.fromRGB(100, 100, 130)
-akKeyLabel.TextXAlignment = Enum.TextXAlignment.Left
-akKeyLabel.Text = "Key saat ini: (diset di script)"
-akKeyLabel.Parent = autokeyTabFrame
+------------------- CONFIG GLOBAL (PERSIST SESI) -------------------
+local cfg = _G.AxaHub_Autokey_CFG
+if type(cfg) ~= "table" then
+    cfg = {
+        KeyString = "",   -- key HG kamu
+        AutoRun   = false,
+        DelaySec  = 12,   -- delay awal sebelum mulai scan UI (10–15 detik tadi)
+    }
+    _G.AxaHub_Autokey_CFG = cfg
+end
+cfg.DelaySec = tonumber(cfg.DelaySec) or 12
 
-local akList = Instance.new("Frame")
-akList.Name = "MenuList"
-akList.Position = UDim2.new(0, 5, 0, 84)
-akList.Size = UDim2.new(1, -10, 1, -92)
-akList.BackgroundTransparency = 1
-akList.Parent = autokeyTabFrame
+------------------- UI STATUS HELPER -------------------
+local statusLabel
 
-local akLayout = Instance.new("UIListLayout")
-akLayout.FillDirection = Enum.FillDirection.Vertical
-akLayout.SortOrder = Enum.SortOrder.LayoutOrder
-akLayout.Padding = UDim.new(0, 4)
-akLayout.Parent = akList
+local function setStatus(text, color)
+    if statusLabel then
+        statusLabel.Text = text or ""
+        if color then
+            statusLabel.TextColor3 = color
+        end
+    end
+end
 
--- =================== KONFIG =================== --
-local KEY_STRING = "b5a60c22-68f1-4ee9-8e73-16f66179bf36" -- GANTI SESUAI KEY
-local ENTRIES = {
-    {
-        label  = "INDO HANGOUT",
-        url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/indohangout.lua",
-        method = "HttpGetAsync",
-    },
-    -- tambahin entry lain di sini
-}
-
-akKeyLabel.Text = "Key saat ini: " .. KEY_STRING
-
--- ROOTS: tempat kemungkinan ModernKeyUI muncul
-local function getRoots()
-    local roots = { PlayerGui, CoreGui }
+local function notify(title, text, duration)
     pcall(function()
-        if gethui then table.insert(roots, gethui()) end
+        StarterGui:SetCore("SendNotification", {
+            Title    = title or "Info",
+            Text     = text or "",
+            Duration = duration or 4,
+        })
     end)
-    pcall(function()
-        if get_hidden_gui then table.insert(roots, get_hidden_gui()) end
+end
+
+------------------- HELPER: ROW TOGGLE ☑ / ☐ -------------------
+local function createToggleRow(parent, orderName, labelText, defaultState)
+    local row = Instance.new("Frame")
+    row.Name = orderName
+    row.Size = UDim2.new(1, 0, 0, 26)
+    row.BackgroundColor3 = Color3.fromRGB(235, 235, 245)
+    row.BackgroundTransparency = 0.1
+    row.BorderSizePixel = 0
+    row.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = row
+
+    local checkBtn = Instance.new("TextButton")
+    checkBtn.Name = "Check"
+    checkBtn.Size = UDim2.new(0, 28, 1, -6)
+    checkBtn.Position = UDim2.new(0, 6, 0, 3)
+    checkBtn.BackgroundColor3 = Color3.fromRGB(210, 210, 230)
+    checkBtn.TextColor3 = Color3.fromRGB(50, 50, 80)
+    checkBtn.Font = Enum.Font.Gotham
+    checkBtn.TextSize = 18
+    checkBtn.Text = defaultState and "☑" or "☐"
+    checkBtn.Parent = row
+    Instance.new("UICorner", checkBtn).CornerRadius = UDim.new(0, 6)
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 40, 0, 0)
+    label.Size = UDim2.new(1, -45, 1, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = Color3.fromRGB(40, 40, 70)
+    label.Text = labelText
+    label.Parent = row
+
+    local state = not not defaultState
+    local callback
+
+    local function applyVisual()
+        checkBtn.Text = state and "☑" or "☐"
+        checkBtn.BackgroundColor3 = state and Color3.fromRGB(140, 190, 255) or Color3.fromRGB(210, 210, 230)
+    end
+
+    local function setState(newState)
+        state = not not newState
+        applyVisual()
+        if callback then
+            task.spawn(callback, state)
+        end
+    end
+
+    checkBtn.MouseButton1Click:Connect(function()
+        setState(not state)
     end)
+
+    local hit = Instance.new("TextButton")
+    hit.BackgroundTransparency = 1
+    hit.Text = ""
+    hit.Size = UDim2.new(1, 0, 1, 0)
+    hit.Parent = row
+    hit.MouseButton1Click:Connect(function()
+        setState(not state)
+    end)
+
+    applyVisual()
+
+    return {
+        Frame     = row,
+        Set       = setState,
+        OnChanged = function(cb) callback = cb end,
+        Get       = function() return state end,
+    }
+end
+
+------------------- HELPER: CARI UI KEY HG -------------------
+local function getRootGuis()
+    local roots = {}
+
+    -- beberapa executor punya gethui()
+    local ok, hui = pcall(function()
+        if typeof(gethui) == "function" then
+            return gethui()
+        end
+    end)
+    if ok and typeof(hui) == "Instance" then
+        table.insert(roots, hui)
+    end
+
+    table.insert(roots, CoreGui)
+    local okPg, pg = pcall(function()
+        return LocalPlayer:WaitForChild("PlayerGui")
+    end)
+    if okPg and typeof(pg) == "Instance" then
+        table.insert(roots, pg)
+    end
+
     return roots
 end
 
--- Click helper yang agresif (firesignal + getconnections)
-local function fireSignalStrong(signal)
-    if not signal then return false end
-    local anyFired = false
+local function findKeyUI()
+    local roots = getRootGuis()
 
-    if typeof(firesignal) == "function" then
-        local ok = pcall(function()
-            firesignal(signal)
-        end)
-        if ok then anyFired = true end
-    end
+    local bestTextBox
+    local bestScore = -1
+    local rootNameForKey = "?"
 
-    local getCons
-    if typeof(getconnections) == "function" then
-        getCons = getconnections
-    elseif debug and typeof(debug.getconnections) == "function" then
-        getCons = debug.getconnections
-    end
+    -- cari TextBox yang keliatan "Key"
+    for _, root in ipairs(roots) do
+        if root and root:IsA("Instance") then
+            for _, inst in ipairs(root:GetDescendants()) do
+                if inst:IsA("TextBox") and inst.Visible and inst.TextEditable ~= false then
+                    local meta = (inst.Name or "") .. " " .. (inst.PlaceholderText or "")
+                    local lower = string.lower(meta)
 
-    if getCons then
-        pcall(function()
-            for _, conn in ipairs(getCons(signal)) do
-                if conn then
-                    pcall(function()
-                        if typeof(conn) == "table" and conn.Function then
-                            conn.Function()
-                        elseif typeof(conn) == "userdata" and conn.Function then
-                            conn:Fire()
-                        end
-                    end)
-                    anyFired = true
-                end
-            end
-        end)
-    end
+                    local score = 0
+                    if lower:find("key") then score = score + 3 end
+                    if lower:find("license") or lower:find("whitelist") then score = score + 1 end
+                    if lower:find("hg") then score = score + 1 end
 
-    return anyFired
-end
-
-local function clickSubmitWithCursor(submitButton)
-    if not submitButton then return end
-
-    local hit =
-        fireSignalStrong(submitButton.MouseButton1Click)
-        or fireSignalStrong(submitButton.MouseButton1Down)
-        or fireSignalStrong(submitButton.MouseButton1Up)
-        or fireSignalStrong(submitButton.Activated)
-
-    if hit then return end
-
-    local buttonPos  = submitButton.AbsolutePosition
-    local buttonSize = submitButton.AbsoluteSize
-    local targetX    = buttonPos.X + buttonSize.X/2
-    local targetY    = buttonPos.Y + buttonSize.Y/2
-
-    local oldPos     = UserInputService:GetMouseLocation()
-    local oldX, oldY = oldPos.X, oldPos.Y
-
-    local function moveMouse(x, y)
-        pcall(function() VirtualInputManager:SendMouseMoveEvent(x, y, game) end)
-        pcall(function() VirtualInputManager:SendMouseMoveEvent(x, y, 0) end)
-        pcall(function() VirtualInputManager:SendMouseMoveEvent(x, y) end)
-    end
-
-    local function clickAt(x, y)
-        moveMouse(x, y)
-        task.wait(0.03)
-        pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-            task.wait(0.02)
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-        end)
-        pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-            task.wait(0.02)
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-        end)
-    end
-
-    clickAt(targetX, targetY)
-    moveMouse(oldX, oldY)
-end
-
-local function findModernKeyUI()
-    local keyBox, submitButton
-
-    for _, root in ipairs(getRoots()) do
-        if root and root.Parent then
-            for _, gui in ipairs(root:GetDescendants()) do
-                if gui:IsA("ScreenGui") and gui.Name == "ModernKeyUI" then
-                    for _, inst in ipairs(gui:GetDescendants()) do
-                        if inst:IsA("TextBox") then
-                            local ph = string.lower(inst.PlaceholderText or "")
-                            if ph == "enter your key" then
-                                keyBox = inst
-                            end
-                        elseif inst:IsA("TextButton") then
-                            local txt = string.lower(inst.Text or "")
-                            if txt == "submit" then
-                                submitButton = inst
-                            end
-                        end
-                    end
-                    if keyBox and submitButton then
-                        return keyBox, submitButton
+                    if score > bestScore then
+                        bestScore = score
+                        bestTextBox = inst
+                        rootNameForKey = root.Name
                     end
                 end
             end
         end
     end
 
-    return nil, nil
+    if not bestTextBox then
+        return nil
+    end
+
+    -- cari Submit/Verify di satu GUI yang sama
+    local submitBtn
+    local submitScore = -1
+
+    local parentGui = bestTextBox:FindFirstAncestorOfClass("ScreenGui") or bestTextBox:FindFirstAncestorOfClass("Frame") or bestTextBox.Parent
+    if parentGui then
+        for _, inst in ipairs(parentGui:GetDescendants()) do
+            if inst:IsA("TextButton") and inst.Visible then
+                local lower = string.lower(inst.Text or "")
+                local score = 0
+                if lower:find("submit") then score = score + 3 end
+                if lower:find("verify") or lower:find("check") then score = score + 2 end
+                if lower:find("continue") or lower:find("confirm") or lower == "ok" then score = score + 1 end
+                if score > submitScore then
+                    submitScore = score
+                    submitBtn = inst
+                end
+            end
+        end
+    end
+
+    return bestTextBox, submitBtn, rootNameForKey
 end
 
-local function autoKeyAndSubmit()
-    if not KEY_STRING or KEY_STRING == "" then
-        warn("[Axa AutoLoader] KEY_STRING kosong, skip auto key.")
-        return
+------------------- AUTOKEY CORE -------------------
+local autoLoopId = 0
+local restartAutoLoop -- forward declaration
+
+local function doAutokey(opts)
+    opts = opts or {}
+    local silent = not not opts.silent
+
+    local key = tostring(cfg.KeyString or "")
+    if key == "" then
+        if not silent then
+            setStatus("❌ Key masih kosong. Isi dulu key HG kamu.", Color3.fromRGB(200, 70, 80))
+        end
+        return false, "EMPTY_KEY"
     end
 
-    local keyBox, submitButton
-    for _ = 1, 60 do
-        keyBox, submitButton = findModernKeyUI()
-        if keyBox and submitButton then break end
-        task.wait(0.5)
+    local textBox, submitBtn, rootName = findKeyUI()
+    if not textBox then
+        if not silent then
+            setStatus("❌ UI key tidak ditemukan. Pastikan panel key HG sudah muncul.", Color3.fromRGB(200, 70, 80))
+        end
+        return false, "NO_UI"
     end
-
-    if not (keyBox and submitButton) then
-        warn("[Axa AutoLoader] Tidak menemukan ModernKeyUI / Submit.")
-        return
-    end
-
-    pcall(function()
-        keyBox:CaptureFocus()
-        keyBox.Text = KEY_STRING
-        keyBox:ReleaseFocus()
-    end)
-
-    task.wait(0.4)
-    clickSubmitWithCursor(submitButton)
-end
-
-local function runEntry(entry)
-    if not entry or not entry.url then return end
-
-    local method = string.lower(entry.method or "HttpGet")
-    local source
 
     local ok, err = pcall(function()
-        if method == "httpgetasync" then
-            source = game:HttpGetAsync(entry.url)
-        else
-            source = game:HttpGet(entry.url)
+        -- isi key
+        textBox.Text = key
+
+        -- fokus sebentar biar kelihatan "diketik"
+        pcall(function()
+            textBox:CaptureFocus()
+        end)
+        task.wait(0.05)
+        pcall(function()
+            textBox:ReleaseFocus()
+        end)
+
+        task.wait(0.05)
+
+        -- tekan tombol submit / verify
+        if submitBtn then
+            local clicked = false
+            if typeof(firesignal) == "function" then
+                clicked = pcall(function()
+                    firesignal(submitBtn.MouseButton1Click)
+                end)
+            end
+            if not clicked then
+                pcall(function()
+                    submitBtn:Activate()
+                end)
+            end
         end
     end)
 
     if not ok then
-        warn("[Axa AutoLoader] Gagal HttpGet:", err)
-        return
+        if not silent then
+            setStatus("⚠ Autokey error: " .. tostring(err), Color3.fromRGB(220, 140, 70))
+        end
+        return false, err
     end
 
-    local fn, loadErr = loadstring(source)
-    if not fn then
-        warn("[Axa AutoLoader] Gagal loadstring:", loadErr)
-        return
+    if not silent then
+        setStatus("✅ Autokey dijalankan (GUI: " .. tostring(rootName) .. ")", Color3.fromRGB(70, 150, 90))
+        notify("Autokey HG", "Key sudah diisi & tombol submit ditekan.")
     end
 
-    local okRun, runErr = pcall(fn)
-    if not okRun then
-        warn("[Axa AutoLoader] Error saat menjalankan script:", runErr)
+    return true
+end
+
+restartAutoLoop = function()
+    autoLoopId += 1
+    local myId = autoLoopId
+
+    if not cfg.AutoRun then
+        return
     end
 
     task.spawn(function()
-        task.wait(2)
-        autoKeyAndSubmit()
+        local delaySec = tonumber(cfg.DelaySec) or 12
+        if delaySec > 0 then
+            for i = delaySec, 1, -1 do
+                if autoLoopId ~= myId or not cfg.AutoRun then
+                    return
+                end
+                setStatus(("⏳ Autokey jalan dalam %d detik..."):format(i), Color3.fromRGB(120, 120, 160))
+                task.wait(1)
+            end
+        end
+
+        local maxTry = 20
+        local tries = 0
+        while autoLoopId == myId and cfg.AutoRun and tries < maxTry do
+            local ok = doAutokey({ silent = true })
+            if ok then
+                setStatus("✅ Autokey: key diisi & submit berhasil.", Color3.fromRGB(70, 150, 90))
+                notify("Autokey HG", "Berhasil menemukan UI key & mengirim key.")
+                return
+            end
+
+            tries += 1
+            setStatus(("🔍 Autokey mencari UI key... (percobaan %d/%d)"):format(tries, maxTry), Color3.fromRGB(160, 130, 60))
+            task.wait(1)
+        end
+
+        if autoLoopId == myId and cfg.AutoRun and tries >= maxTry then
+            setStatus("⚠ Autokey tidak menemukan UI key. Buka dulu panel key HG-mu.", Color3.fromRGB(200, 80, 80))
+        end
     end)
 end
 
-for i, entry in ipairs(ENTRIES) do
-    local btn = Instance.new("TextButton")
-    btn.Name = "Entry_" .. i
-    btn.Size = UDim2.new(1, 0, 0, 28)
-    btn.BackgroundColor3 = Color3.fromRGB(225, 225, 235)
-    btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
-    btn.TextColor3 = Color3.fromRGB(60, 60, 90)
-    btn.Text = entry.label or ("Entry " .. i)
-    btn.Parent = akList
+local function cancelAutoLoop()
+    autoLoopId += 1 -- cukup naikkan id supaya loop lama berhenti sendiri
+end
 
-    local bc = Instance.new("UICorner")
-    bc.CornerRadius = UDim.new(0, 8)
-    bc.Parent = btn
+------------------- BANGUN UI TAB -------------------
+do
+    -- Header
+    local header = Instance.new("TextLabel")
+    header.Name = "AutokeyHeader"
+    header.Size = UDim2.new(1, -10, 0, 22)
+    header.Position = UDim2.new(0, 5, 0, 6)
+    header.BackgroundTransparency = 1
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 15
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.TextColor3 = Color3.fromRGB(40, 40, 70)
+    header.Text = "🔑 Autokey HG"
+    header.Parent = TAB_FRAME
 
-    btn.MouseButton1Click:Connect(function()
-        btn.Text = "Loading..."
-        task.spawn(function()
-            runEntry(entry)
-            task.wait(0.4)
-            if btn then
-                btn.Text = entry.label or ("Entry " .. i)
+    local sub = Instance.new("TextLabel")
+    sub.Name = "AutokeySub"
+    sub.Size = UDim2.new(1, -10, 0, 40)
+    sub.Position = UDim2.new(0, 5, 0, 28)
+    sub.BackgroundTransparency = 1
+    sub.Font = Enum.Font.Gotham
+    sub.TextSize = 12
+    sub.TextWrapped = true
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.TextYAlignment = Enum.TextYAlignment.Top
+    sub.TextColor3 = Color3.fromRGB(90, 90, 120)
+    sub.Text = "Simpan key HG di sini. Autokey akan mencari UI key (CoreGui/PlayerGui/gethui), mengisi key, lalu menekan tombol Submit/Verify."
+    sub.Parent = TAB_FRAME
+
+    -- Label Key
+    local keyLabel = Instance.new("TextLabel")
+    keyLabel.Name = "KeyLabel"
+    keyLabel.Size = UDim2.new(1, -10, 0, 20)
+    keyLabel.Position = UDim2.new(0, 5, 0, 70)
+    keyLabel.BackgroundTransparency = 1
+    keyLabel.Font = Enum.Font.Gotham
+    keyLabel.TextSize = 13
+    keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+    keyLabel.TextColor3 = Color3.fromRGB(40, 40, 70)
+    keyLabel.Text = "Key HG:"
+    keyLabel.Parent = TAB_FRAME
+
+    -- TextBox Key
+    local keyBox = Instance.new("TextBox")
+    keyBox.Name = "KeyBox"
+    keyBox.Size = UDim2.new(1, -10, 0, 28)
+    keyBox.Position = UDim2.new(0, 5, 0, 92)
+    keyBox.BackgroundColor3 = Color3.fromRGB(235, 235, 245)
+    keyBox.BorderSizePixel = 0
+    keyBox.ClearTextOnFocus = false
+    keyBox.Font = Enum.Font.Code
+    keyBox.TextSize = 14
+    keyBox.TextXAlignment = Enum.TextXAlignment.Left
+    keyBox.TextColor3 = Color3.fromRGB(40, 40, 70)
+    keyBox.PlaceholderText = "Masukkan key HG kamu di sini..."
+    keyBox.Text = cfg.KeyString or ""
+    keyBox.Parent = TAB_FRAME
+    Instance.new("UICorner", keyBox).CornerRadius = UDim.new(0, 8)
+    local kbPad = Instance.new("UIPadding")
+    kbPad.PaddingLeft = UDim.new(0, 8)
+    kbPad.PaddingRight = UDim.new(0, 8)
+    kbPad.Parent = keyBox
+
+    -- Tombol SIMPAN
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Name = "SaveKeyBtn"
+    saveBtn.Size = UDim2.new(0, 110, 0, 26)
+    saveBtn.Position = UDim2.new(0, 5, 0, 126)
+    saveBtn.BackgroundColor3 = Color3.fromRGB(140, 190, 255)
+    saveBtn.TextColor3 = Color3.fromRGB(20, 30, 50)
+    saveBtn.Font = Enum.Font.GothamSemibold
+    saveBtn.TextSize = 13
+    saveBtn.Text = "Simpan Key"
+    saveBtn.Parent = TAB_FRAME
+    Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 7)
+
+    -- Toggle AUTORUN
+    local autoRow = createToggleRow(
+        TAB_FRAME,
+        "1_AutokeyAutoRun",
+        "Autokey otomatis setelah delay (±".. tostring(cfg.DelaySec) .." detik)",
+        not not cfg.AutoRun
+    )
+    autoRow.Frame.Position = UDim2.new(0, 5, 0, 160)
+    autoRow.Frame.Size     = UDim2.new(1, -10, 0, 26)
+
+    -- Row Tombol aksi (Test Now + Reset Status)
+    local actionRow = Instance.new("Frame")
+    actionRow.Name = "ActionRow"
+    actionRow.Size = UDim2.new(1, -10, 0, 28)
+    actionRow.Position = UDim2.new(0, 5, 0, 194)
+    actionRow.BackgroundTransparency = 1
+    actionRow.Parent = TAB_FRAME
+
+    local testBtn = Instance.new("TextButton")
+    testBtn.Name = "TestBtn"
+    testBtn.Size = UDim2.new(0.6, -4, 1, 0)
+    testBtn.Position = UDim2.new(0, 0, 0, 0)
+    testBtn.BackgroundColor3 = Color3.fromRGB(90, 190, 120)
+    testBtn.TextColor3 = Color3.fromRGB(20, 30, 40)
+    testBtn.Font = Enum.Font.GothamSemibold
+    testBtn.TextSize = 13
+    testBtn.Text = "Test Autokey Sekarang"
+    testBtn.Parent = actionRow
+    Instance.new("UICorner", testBtn).CornerRadius = UDim.new(0, 7)
+
+    local resetBtn = Instance.new("TextButton")
+    resetBtn.Name = "ResetStatusBtn"
+    resetBtn.Size = UDim2.new(0.4, -4, 1, 0)
+    resetBtn.Position = UDim2.new(0.6, 4, 0, 0)
+    resetBtn.BackgroundColor3 = Color3.fromRGB(220, 222, 235)
+    resetBtn.TextColor3 = Color3.fromRGB(50, 60, 90)
+    resetBtn.Font = Enum.Font.GothamSemibold
+    resetBtn.TextSize = 13
+    resetBtn.Text = "Reset Status"
+    resetBtn.Parent = actionRow
+    Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 7)
+
+    -- Status label
+    statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Size = UDim2.new(1, -10, 0, 34)
+    statusLabel.Position = UDim2.new(0, 5, 0, 228)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextSize = 12
+    statusLabel.TextWrapped = true
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    statusLabel.TextYAlignment = Enum.TextYAlignment.Top
+    statusLabel.TextColor3 = Color3.fromRGB(90, 90, 120)
+    statusLabel.Text = "Status: standby. Isi key HG lalu tekan \"Simpan Key\"."
+    statusLabel.Parent = TAB_FRAME
+
+    ------------------- EVENT HOOKS -------------------
+    saveBtn.MouseButton1Click:Connect(function()
+        cfg.KeyString = keyBox.Text or ""
+        if cfg.KeyString == "" then
+            setStatus("⚠ Key kosong. Simpan key HG kamu dulu.", Color3.fromRGB(200, 120, 60))
+        else
+            setStatus("✅ Key disimpan di sesi AxaHub (tidak permanen).", Color3.fromRGB(70, 150, 90))
+            notify("Autokey HG", "Key disimpan. Aktifkan Autokey otomatis bila perlu.", 3)
+            if cfg.AutoRun then
+                restartAutoLoop()
             end
-        end)
+        end
     end)
+
+    autoRow.OnChanged(function(state)
+        cfg.AutoRun = state and true or false
+        if cfg.AutoRun then
+            setStatus("⏳ Autokey otomatis aktif. Menunggu delay & UI key HG.", Color3.fromRGB(120, 120, 160))
+            restartAutoLoop()
+        else
+            cancelAutoLoop()
+            setStatus("⏹ Autokey otomatis dimatikan. Kamu masih bisa pakai tombol Test Autokey.", Color3.fromRGB(120, 120, 160))
+        end
+    end)
+
+    testBtn.MouseButton1Click:Connect(function()
+        local ok = doAutokey({ silent = false })
+        if not ok then
+            notify("Autokey HG", "Gagal menemukan UI key / error. Pastikan panel key sudah muncul.", 4)
+        end
+    end)
+
+    resetBtn.MouseButton1Click:Connect(function()
+        setStatus("Status: standby. Isi key HG lalu tekan \"Simpan Key\".", Color3.fromRGB(90, 90, 120))
+    end)
+
+    -- INIT STATUS + AUTOLOOP (kalau sudah ON & key ada)
+    if (cfg.KeyString or "") ~= "" then
+        if cfg.AutoRun then
+            setStatus("⏳ Autokey otomatis aktif. Menunggu delay & UI key HG.", Color3.fromRGB(120, 120, 160))
+            restartAutoLoop()
+        else
+            setStatus("Status: key sudah disimpan. Aktifkan Autokey otomatis atau tekan Test Autokey.", Color3.fromRGB(90, 90, 120))
+        end
+    else
+        setStatus("Status: standby. Isi key HG lalu tekan \"Simpan Key\".", Color3.fromRGB(90, 90, 120))
+    end
 end
