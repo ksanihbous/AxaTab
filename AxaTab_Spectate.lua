@@ -1,13 +1,12 @@
 --==========================================================
 --  AxaTab_Spectate.lua
---  NOTE:
---    - Dijalankan via loadstring dari core dengan env custom
---    - Variabel penting yang sudah ada di env:
---        TAB_ID, TAB_FRAME, CONTENT_HOLDER
---        Players, LocalPlayer, RunService, Camera, AXA_TWEEN, dsb.
+--  Dipanggil via loadstring dari CORE AxaHub
+--  Env yang tersedia (dari core):
+--    TAB_FRAME, TAB_ID
+--    Players, LocalPlayer, RunService, Camera
 --==========================================================
 
-local frame       = TAB_FRAME      -- frame putih tempat isi UI
+local frame       = TAB_FRAME      -- frame putih di dalam ContentHolder
 local player      = LocalPlayer
 local players     = Players
 local runService  = RunService
@@ -37,7 +36,7 @@ sub.TextColor3 = Color3.fromRGB(90, 90, 120)
 sub.TextXAlignment = Enum.TextXAlignment.Left
 sub.TextYAlignment = Enum.TextYAlignment.Top
 sub.TextWrapped = true
-sub.Text = "Pilih player, nyalakan ESP, spectate kamera, atau teleport."
+sub.Text = "Pilih player, nyalakan ESP (dengan jarak meter), spectate kamera, atau teleport ke target."
 sub.Parent = frame
 
 -- Search box
@@ -130,7 +129,7 @@ local espAllCorner = Instance.new("UICorner")
 espAllCorner.CornerRadius = UDim.new(0, 8)
 espAllCorner.Parent = espAllBtn
 
---===================== LOGIC MINI (contoh) =====================--
+--===================== LOGIC =====================--
 local currentSpectateTarget = nil
 local spectateLock          = false
 local activeESP             = {}
@@ -234,8 +233,28 @@ local function teleportToPlayer(target)
     end
 end
 
--- build row, filter, dsb (ringkas)
+-- Filter & row
 local rows = {}
+
+local function matchesSearch(plr)
+    local q = string.lower(searchBox.Text or "")
+    if q == "" then return true end
+    local dn = string.lower(plr.DisplayName or plr.Name)
+    local un = string.lower(plr.Name)
+    return dn:find(q, 1, true) or un:find(q, 1, true)
+end
+
+local function applySearchFilter()
+    for plr, row in pairs(rows) do
+        local match = matchesSearch(plr)
+        row.Visible = match
+        if match then
+            row.Size = UDim2.new(1, 0, 0, 40)
+        else
+            row.Size = UDim2.new(1, 0, 0, 0)
+        end
+    end
+end
 
 local function buildRow(plr)
     local row = Instance.new("Frame")
@@ -348,9 +367,16 @@ local function rebuildList()
             buildRow(plr)
         end
     end
+    applySearchFilter()
 end
 
-players.PlayerAdded:Connect(buildRow)
+searchBox:GetPropertyChangedSignal("Text"):Connect(applySearchFilter)
+
+players.PlayerAdded:Connect(function(plr)
+    buildRow(plr)
+    applySearchFilter()
+end)
+
 players.PlayerRemoving:Connect(function(plr)
     local row = rows[plr]
     if row then
@@ -360,9 +386,6 @@ players.PlayerRemoving:Connect(function(plr)
     setESPOnTarget(plr, false)
 end)
 
-rebuildList()
-setSpectateStatus("Idle")
-
 stopBtn.MouseButton1Click:Connect(function()
     stopSpectate()
 end)
@@ -370,7 +393,7 @@ end)
 espAllBtn.MouseButton1Click:Connect(function()
     espAllOn = not espAllOn
     espAllBtn.Text = espAllOn and "ESP ALL: ON" or "ESP ALL: OFF"
-    espAllBtn.BackgroundColor3 = espAllOn and Color3.fromRGB(110, 150, 255) or Color3.fromRGB(80,80,120)
+    espAllBtn.BackgroundColor3 = espAllOn and Color3.fromRGB(110, 150, 255) or Color3.fromRGB(80, 80, 120)
 
     for plr, _ in pairs(rows) do
         if plr ~= player then
@@ -379,7 +402,7 @@ espAllBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Update kamera + jarak
+-- Kamera + jarak
 runService.RenderStepped:Connect(function()
     if currentSpectateTarget and not spectateLock then
         local cam  = workspace.CurrentCamera
@@ -410,8 +433,11 @@ runService.RenderStepped:Connect(function()
                     if label and label:IsA("TextLabel") then
                         local distStuds = (hrp.Position - myHRP.Position).Magnitude
                         local meters = math.floor(distStuds * STUDS_TO_METERS + 0.5)
-                        label.Text = string.format("%s | @%s | %d meter",
-                            plr.DisplayName or plr.Name, plr.Name, meters
+                        label.Text = string.format(
+                            "%s | @%s | %d meter",
+                            plr.DisplayName or plr.Name,
+                            plr.Name,
+                            meters
                         )
                     end
                 end
@@ -419,3 +445,6 @@ runService.RenderStepped:Connect(function()
         end
     end
 end)
+
+rebuildList()
+setSpectateStatus("Idle")
