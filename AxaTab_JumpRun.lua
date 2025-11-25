@@ -1,418 +1,564 @@
 --==========================================================
---  AxaTab_Util_JumpRunKompas.lua (TAB 6)
---  Fitur:
---    - ShiftRun (hold Shift → lari + FOV melebar)
---    - Infinite Jump (space spam di udara)
---    - Kompas arah kamera (N / NE / E / ... + derajat)
---
---  Env dari CORE:
---    TAB_FRAME     -- frame putih konten TAB
---    LocalPlayer
---    Players
---    RunService
---    UserInputService
---    TweenService
---    Camera        -- (opsional, fallback ke workspace.CurrentCamera)
---    StarterGui    -- (opsional, buat notifikasi)
+--  AxaTab_Util_JumpRunKompas.lua
+--  Fokus: ShiftRun (LeftShift + Anim + FOV) + Infinite Jump
+--  Env dari core:
+--      TAB_FRAME = Frame konten tab Util
 --==========================================================
 
-local tabFrame      = TAB_FRAME
-local player        = LocalPlayer
-local players       = Players
-local runService    = RunService
-local userInput     = UserInputService
-local tweenService  = TweenService
-local starterGui    = StarterGui
-local camera        = Camera or workspace.CurrentCamera
+------------------- SERVICES / ENV -------------------
+local TAB_FRAME = TAB_FRAME  -- dari core AxaHub
 
-------------------------------------------------------------
--- HEADER UI
-------------------------------------------------------------
-local header = Instance.new("TextLabel")
-header.Name = "Header"
-header.Size = UDim2.new(1, -10, 0, 22)
-header.Position = UDim2.new(0, 5, 0, 6)
-header.BackgroundTransparency = 1
-header.Font = Enum.Font.GothamBold
-header.TextSize = 15
-header.TextColor3 = Color3.fromRGB(40, 40, 60)
-header.TextXAlignment = Enum.TextXAlignment.Left
-header.Text = "⚙️ Utilitas: Jump / Run / Kompas"
-header.Parent = tabFrame
+local Players              = game:GetService("Players")
+local RunService           = game:GetService("RunService")
+local TweenService         = game:GetService("TweenService")
+local UserInputService     = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local StarterGui           = game:GetService("StarterGui")
+local Debris               = game:GetService("Debris")
+local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 
-local sub = Instance.new("TextLabel")
-sub.Name = "Sub"
-sub.Size = UDim2.new(1, -10, 0, 32)
-sub.Position = UDim2.new(0, 5, 0, 26)
-sub.BackgroundTransparency = 1
-sub.Font = Enum.Font.Gotham
-sub.TextSize = 12
-sub.TextColor3 = Color3.fromRGB(90, 90, 120)
-sub.TextXAlignment = Enum.TextXAlignment.Left
-sub.TextYAlignment = Enum.TextYAlignment.Top
-sub.TextWrapped = true
-sub.Text = "ShiftRun (hold Shift), Infinite Jump, dan Kompas arah kamera (N/NE/E/... + derajat)."
-sub.Parent = tabFrame
+local LocalPlayer = Players.LocalPlayer
+local camera      = workspace.CurrentCamera
 
-------------------------------------------------------------
--- HELPERS
-------------------------------------------------------------
-local function safeNotify(title, text, dur)
-    if not starterGui then return end
+------------------------------------------------------
+-- HELPER UI: Row Toggle (☐ / ☑)
+------------------------------------------------------
+local function createToggleRow(parent, orderName, labelText, defaultState)
+    local row = Instance.new("Frame")
+    row.Name = orderName
+    row.Size = UDim2.new(1, 0, 0, 26)
+    row.BackgroundColor3 = Color3.fromRGB(235, 235, 245)
+    row.BackgroundTransparency = 0.1
+    row.BorderSizePixel = 0
+    row.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = row
+
+    local checkBtn = Instance.new("TextButton")
+    checkBtn.Name = "Check"
+    checkBtn.Size = UDim2.new(0, 28, 1, -6)
+    checkBtn.Position = UDim2.new(0, 6, 0, 3)
+    checkBtn.BackgroundColor3 = Color3.fromRGB(210, 210, 230)
+    checkBtn.TextColor3 = Color3.fromRGB(50, 50, 80)
+    checkBtn.Font = Enum.Font.Gotham
+    checkBtn.TextSize = 18
+    checkBtn.Text = defaultState and "☑" or "☐"
+    checkBtn.Parent = row
+    Instance.new("UICorner", checkBtn).CornerRadius = UDim.new(0, 6)
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.BackgroundTransparency = 1
+    label.Position = UDim2.new(0, 40, 0, 0)
+    label.Size = UDim2.new(1, -45, 1, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = Color3.fromRGB(40, 40, 70)
+    label.Text = labelText
+    label.Parent = row
+
+    local state = not not defaultState
+    local callback
+
+    local function applyVisual()
+        checkBtn.Text = state and "☑" or "☐"
+        checkBtn.BackgroundColor3 = state and Color3.fromRGB(140, 190, 255) or Color3.fromRGB(210, 210, 230)
+    end
+
+    local function setState(newState)
+        state = not not newState
+        applyVisual()
+        if callback then
+            task.spawn(callback, state)
+        end
+    end
+
+    checkBtn.MouseButton1Click:Connect(function()
+        setState(not state)
+    end)
+
+    -- klik di label juga toggle
+    local hit = Instance.new("TextButton")
+    hit.BackgroundTransparency = 1
+    hit.Text = ""
+    hit.Size = UDim2.new(1, 0, 1, 0)
+    hit.Parent = row
+    hit.MouseButton1Click:Connect(function()
+        setState(not state)
+    end)
+
+    applyVisual()
+
+    return {
+        Frame = row,
+        Set = setState,
+        OnChanged = function(cb) callback = cb end,
+        Get = function() return state end,
+    }
+end
+
+------------------------------------------------------
+-- SAFE CHAR PARTS + POSISI (dipakai umum)
+------------------------------------------------------
+local function safeCharParts(character)
+    if not character then return end
+    local hrp  = character:FindFirstChild("HumanoidRootPart")
+    local head = character:FindFirstChild("Head")
+    if not (hrp and head) then return end
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    return hrp, head, hum
+end
+
+local function getCharPosition(char: Model?)
+    if not char then return nil end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp and hrp:IsA("BasePart") then
+        return hrp.Position
+    end
+
+    if char.PrimaryPart then
+        return char.PrimaryPart.Position
+    end
+
+    local ok, cframe = pcall(function()
+        return char:GetPivot()
+    end)
+    if ok and typeof(cframe) == "CFrame" then
+        return cframe.Position
+    end
+
+    return nil
+end
+
+------------------------------------------------------
+-- SHIFT RUN (mengikuti script referensi kamu)
+------------------------------------------------------
+local SR_AnimationID = 10862419793
+local SR_RunningSpeed = 40
+local SR_NormalSpeed  = 20
+local SR_RunFOV       = 80
+local SR_NormalFOV    = 70
+local SR_KeyString    = "LeftShift"
+local SR_ACTION_NAME  = "RunBind"
+
+local SR_sprintEnabled = false -- default OFF, diatur dari toggle tab
+local SR_Running       = false
+local SR_Humanoid      = nil
+local SR_RAnimation    = nil
+local SR_TweenRun      = nil
+local SR_TweenWalk     = nil
+local SR_HeartbeatConn = nil
+
+local function SR_ensureTweens()
+    local inInfo  = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+    local outInfo = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+
+    SR_TweenRun  = TweenService:Create(camera, inInfo,  { FieldOfView = SR_RunFOV })
+    SR_TweenWalk = TweenService:Create(camera, outInfo, { FieldOfView = SR_NormalFOV })
+end
+
+local function SR_applyWalk()
+    if SR_Humanoid then
+        SR_Humanoid.WalkSpeed = SR_NormalSpeed
+    end
+    if SR_RAnimation and SR_RAnimation.IsPlaying then
+        pcall(function() SR_RAnimation:Stop() end)
+    end
+    if SR_TweenWalk then
+        SR_TweenWalk:Play()
+    else
+        camera.FieldOfView = SR_NormalFOV
+    end
+end
+
+local function SR_applyRun()
+    if SR_Humanoid then
+        SR_Humanoid.WalkSpeed = SR_RunningSpeed
+    end
+    if SR_RAnimation and not SR_RAnimation.IsPlaying then
+        pcall(function() SR_RAnimation:Play() end)
+    end
+    if SR_TweenRun then
+        SR_TweenRun:Play()
+    else
+        camera.FieldOfView = SR_RunFOV
+    end
+end
+
+local function SR_setSprintEnabled(newVal)
+    SR_sprintEnabled = newVal and true or false
+
+    if not SR_Humanoid then return end
+
+    if not SR_sprintEnabled then
+        SR_Running = false
+        SR_applyWalk()
+    else
+        local keyEnum = Enum.KeyCode[SR_KeyString] or Enum.KeyCode.LeftShift
+        local holding = UserInputService:IsKeyDown(keyEnum)
+        if holding and SR_Humanoid.MoveDirection.Magnitude > 0 then
+            SR_Running = true
+            SR_applyRun()
+        else
+            SR_Running = false
+            SR_applyWalk()
+        end
+    end
+end
+
+local function SR_bindShiftAction()
+    local keyEnum = Enum.KeyCode[SR_KeyString] or Enum.KeyCode.LeftShift
+
     pcall(function()
-        starterGui:SetCore("SendNotification", {
-            Title    = title,
-            Text     = text,
-            Duration = dur or 5
-        })
+        ContextActionService:UnbindAction(SR_ACTION_NAME)
+    end)
+
+    ContextActionService:BindAction(
+        SR_ACTION_NAME,
+        function(BindName, InputState)
+            if BindName ~= SR_ACTION_NAME then return end
+
+            if InputState == Enum.UserInputState.Begin then
+                SR_Running = true
+            elseif InputState == Enum.UserInputState.End then
+                SR_Running = false
+            end
+
+            if not SR_sprintEnabled then
+                SR_applyWalk()
+                return
+            end
+
+            if SR_Running then
+                SR_applyRun()
+            else
+                SR_applyWalk()
+            end
+        end,
+        true,
+        keyEnum
+    )
+end
+
+local function SR_startHeartbeatEnforcement()
+    if SR_HeartbeatConn then
+        SR_HeartbeatConn:Disconnect()
+        SR_HeartbeatConn = nil
+    end
+
+    SR_HeartbeatConn = RunService.Heartbeat:Connect(function()
+        if not SR_Humanoid then return end
+
+        if not SR_sprintEnabled then
+            if SR_Humanoid.WalkSpeed ~= SR_NormalSpeed
+            or (SR_RAnimation and SR_RAnimation.IsPlaying)
+            or camera.FieldOfView ~= SR_NormalFOV
+            then
+                SR_applyWalk()
+            end
+        else
+            if SR_Running then
+                if SR_Humanoid.WalkSpeed ~= SR_RunningSpeed
+                or (SR_RAnimation and not SR_RAnimation.IsPlaying)
+                or camera.FieldOfView ~= SR_RunFOV
+                then
+                    SR_applyRun()
+                end
+            else
+                if SR_Humanoid.WalkSpeed ~= SR_NormalSpeed
+                or (SR_RAnimation and SR_RAnimation.IsPlaying)
+                or camera.FieldOfView ~= SR_NormalFOV
+                then
+                    SR_applyWalk()
+                end
+            end
+        end
     end)
 end
 
-local function getHumanoid()
-    local char = player.Character or player.CharacterAdded:Wait()
-    return char:FindFirstChildOfClass("Humanoid")
-end
+local function SR_attachCharacter(char)
+    SR_Humanoid = char:WaitForChild("Humanoid", 5)
+    if not SR_Humanoid then return end
 
-local humanoid = getHumanoid()
-local normalSpeed = 16
-local normalFOV   = (camera and camera.FieldOfView) or 70
-local runSpeed    = 40
-local runFOV      = 80
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://" .. SR_AnimationID
 
-if humanoid then
-    normalSpeed = humanoid.WalkSpeed
-end
-
-player.CharacterAdded:Connect(function(char)
-    humanoid = char:WaitForChild("Humanoid", 10)
-    if humanoid then
-        normalSpeed = humanoid.WalkSpeed
+    local ok, track = pcall(function()
+        return SR_Humanoid:LoadAnimation(anim)
+    end)
+    if ok then
+        SR_RAnimation = track
     end
-end)
 
-------------------------------------------------------------
--- UI: LIST TOGGLE (kiri)
-------------------------------------------------------------
-local toggleList = Instance.new("Frame")
-toggleList.Name = "ToggleList"
-toggleList.Position = UDim2.new(0, 5, 0, 64)
-toggleList.Size = UDim2.new(0.6, -10, 0, 120)
-toggleList.BackgroundTransparency = 1
-toggleList.Parent = tabFrame
+    SR_ensureTweens()
+    camera.FieldOfView    = SR_NormalFOV
+    SR_Humanoid.WalkSpeed = SR_NormalSpeed
 
-local toggleLayout = Instance.new("UIListLayout")
-toggleLayout.FillDirection = Enum.FillDirection.Vertical
-toggleLayout.SortOrder = Enum.SortOrder.LayoutOrder
-toggleLayout.Padding = UDim.new(0, 6)
-toggleLayout.Parent = toggleList
-
-local function createToggleRow(titleText, descText)
-    local row = Instance.new("Frame")
-    row.Name = titleText
-    row.Size = UDim2.new(1, 0, 0, 40)
-    row.BackgroundColor3 = Color3.fromRGB(235, 235, 245)
-    row.BackgroundTransparency = 0.05
-    row.BorderSizePixel = 0
-    row.Parent = toggleList
-
-    local rc = Instance.new("UICorner")
-    rc.CornerRadius = UDim.new(0, 8)
-    rc.Parent = row
-
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.Size = UDim2.new(1, -90, 0, 18)
-    title.Position = UDim2.new(0, 8, 0, 4)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 13
-    title.TextColor3 = Color3.fromRGB(50, 50, 80)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Text = titleText
-    title.Parent = row
-
-    local desc = Instance.new("TextLabel")
-    desc.Name = "Desc"
-    desc.Size = UDim2.new(1, -90, 0, 16)
-    desc.Position = UDim2.new(0, 8, 0, 20)
-    desc.BackgroundTransparency = 1
-    desc.Font = Enum.Font.Gotham
-    desc.TextSize = 11
-    desc.TextColor3 = Color3.fromRGB(110, 110, 140)
-    desc.TextXAlignment = Enum.TextXAlignment.Left
-    desc.TextYAlignment = Enum.TextYAlignment.Top
-    desc.Text = descText or ""
-    desc.Parent = row
-
-    local btn = Instance.new("TextButton")
-    btn.Name = "Toggle"
-    btn.Size = UDim2.new(0, 70, 0, 26)
-    btn.AnchorPoint = Vector2.new(1, 0.5)
-    btn.Position = UDim2.new(1, -8, 0.5, 0)
-    btn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    btn.Text = "OFF"
-    btn.Parent = row
-
-    local bc = Instance.new("UICorner")
-    bc.CornerRadius = UDim.new(0, 999)
-    bc.Parent = btn
-
-    return row, btn
-end
-
-------------------------------------------------------------
--- UI: KOMPAS (kanan atas)
-------------------------------------------------------------
-local compassFrame = Instance.new("Frame")
-compassFrame.Name = "Compass"
-compassFrame.Size = UDim2.new(0, 120, 0, 80)
-compassFrame.AnchorPoint = Vector2.new(1, 0)
-compassFrame.Position = UDim2.new(1, -8, 0, 64)
-compassFrame.BackgroundColor3 = Color3.fromRGB(20, 24, 36)
-compassFrame.BorderSizePixel = 0
-compassFrame.Parent = tabFrame
-
-local cfCorner = Instance.new("UICorner")
-cfCorner.CornerRadius = UDim.new(0, 10)
-cfCorner.Parent = compassFrame
-
-local cfStroke = Instance.new("UIStroke")
-cfStroke.Thickness = 1
-cfStroke.Color = Color3.fromRGB(70, 80, 110)
-cfStroke.Parent = compassFrame
-
-local compassTitle = Instance.new("TextLabel")
-compassTitle.Name = "Title"
-compassTitle.Size = UDim2.new(1, -10, 0, 18)
-compassTitle.Position = UDim2.new(0, 5, 0, 4)
-compassTitle.BackgroundTransparency = 1
-compassTitle.Font = Enum.Font.GothamBold
-compassTitle.TextSize = 12
-compassTitle.TextColor3 = Color3.fromRGB(180, 190, 230)
-compassTitle.TextXAlignment = Enum.TextXAlignment.Center
-compassTitle.Text = "🧭 Kompas"
-compassTitle.Parent = compassFrame
-
-local compassDir = Instance.new("TextLabel")
-compassDir.Name = "Direction"
-compassDir.Size = UDim2.new(1, -10, 0, 24)
-compassDir.Position = UDim2.new(0, 5, 0, 26)
-compassDir.BackgroundTransparency = 1
-compassDir.Font = Enum.Font.GothamBold
-compassDir.TextSize = 16
-compassDir.TextColor3 = Color3.fromRGB(230, 235, 255)
-compassDir.TextXAlignment = Enum.TextXAlignment.Center
-compassDir.Text = "N (0°)"
-compassDir.Parent = compassFrame
-
-local compassHint = Instance.new("TextLabel")
-compassHint.Name = "Hint"
-compassHint.Size = UDim2.new(1, -10, 0, 18)
-compassHint.Position = UDim2.new(0, 5, 0, 52)
-compassHint.BackgroundTransparency = 1
-compassHint.Font = Enum.Font.Gotham
-compassHint.TextSize = 10
-compassHint.TextColor3 = Color3.fromRGB(160, 170, 210)
-compassHint.TextXAlignment = Enum.TextXAlignment.Center
-compassHint.Text = "Arah kamera"
-compassHint.Parent = compassFrame
-
-------------------------------------------------------------
--- LOGIC: SHIFT RUN
-------------------------------------------------------------
-local sprintFeatureOn = false
-local shiftHeld       = false
-
-local function applySprintState()
-    local hum = humanoid or getHumanoid()
-    if not hum then return end
-
-    if sprintFeatureOn and shiftHeld then
-        hum.WalkSpeed = runSpeed
-        if camera then
-            camera.FieldOfView = runFOV
+    SR_Humanoid.Running:Connect(function(Speed)
+        if not SR_sprintEnabled then
+            SR_applyWalk()
+            return
         end
-    else
-        hum.WalkSpeed = normalSpeed
-        if camera then
-            camera.FieldOfView = normalFOV
+
+        if Speed >= 10 and SR_Running and SR_RAnimation and not SR_RAnimation.IsPlaying then
+            SR_applyRun()
+        elseif Speed >= 10 and (not SR_Running) and SR_RAnimation and SR_RAnimation.IsPlaying then
+            SR_applyWalk()
+        elseif Speed < 10 and SR_RAnimation and SR_RAnimation.IsPlaying then
+            SR_applyWalk()
         end
-    end
+    end)
+
+    SR_Humanoid.Changed:Connect(function()
+        if SR_Humanoid.Jump and SR_RAnimation and SR_RAnimation.IsPlaying then
+            pcall(function() SR_RAnimation:Stop() end)
+        end
+    end)
+
+    SR_bindShiftAction()
+    SR_startHeartbeatEnforcement()
+
+    -- sinkron dengan state toggle saat ini
+    SR_setSprintEnabled(SR_sprintEnabled)
 end
 
-local function setSprintEnabled(state)
-    sprintFeatureOn = state
-    if not sprintFeatureOn then
-        shiftHeld = false
-        applySprintState()
-    else
-        applySprintState()
+if LocalPlayer.Character then
+    SR_attachCharacter(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(SR_attachCharacter)
+
+------------------------------------------------------
+-- INFINITE JUMP (Double Jump kamu, dibungkus toggle)
+------------------------------------------------------
+local IJ_Settings = {
+    ExtraJumps         = 5,    -- berapa kali lompat tambahan di udara
+    WhiteList          = {},   -- kosong = semua boleh
+    EnableAirStepVFX   = true,
+    AirStepLife        = 0.5,
+    AirStepSize        = Vector3.new(2.5, 0.35, 2.5),
+    AirStepTransparency = 0.25,
+    AirStepMaterial    = Enum.Material.Neon,
+}
+
+local IJ_Enabled   = false
+local IJ_Humanoid  = nil
+local IJ_Root      = nil
+local IJ_JumpsDone = 0
+local IJ_Grounded  = false
+local IJ_AirTimer  = 0
+
+local function IJ_isWhitelisted(p: Player): boolean
+    local wl = IJ_Settings.WhiteList
+    if wl and #wl > 0 then
+        for _, id in ipairs(wl) do
+            if id == p.UserId then
+                return true
+            end
+        end
+        return false
     end
+    return true
 end
 
-local function isShift(input)
-    return input.KeyCode == Enum.KeyCode.LeftShift
-        or input.KeyCode == Enum.KeyCode.RightShift
-end
+local JumpPlatformTemplate = ReplicatedStorage:FindFirstChild("JumpPlatform")
 
-userInput.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if isShift(input) then
-        shiftHeld = true
-        applySprintState()
-    end
-end)
+local function IJ_spawnAirStepVFX(pos: Vector3)
+    if not IJ_Settings.EnableAirStepVFX then return end
 
-userInput.InputEnded:Connect(function(input, gp)
-    if isShift(input) then
-        shiftHeld = false
-        applySprintState()
-    end
-end)
+    if JumpPlatformTemplate then
+        local obj = JumpPlatformTemplate:Clone()
+        obj.Name = "DJ_Pivot"
+        obj.Parent = workspace
 
-------------------------------------------------------------
--- LOGIC: INFINITE JUMP
-------------------------------------------------------------
-local infiniteJumpOn = false
-local jumpConn
-
-local function setInfiniteJumpEnabled(state)
-    infiniteJumpOn = state
-
-    if infiniteJumpOn then
-        if not jumpConn then
-            jumpConn = userInput.JumpRequest:Connect(function()
-                if not infiniteJumpOn then return end
-                local hum = humanoid or getHumanoid()
-                if hum then
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        if obj:IsA("BasePart") then
+            obj.Anchored = true
+            obj.CanCollide = false
+            obj.CFrame = CFrame.new(pos)
+        else
+            if obj.PrimaryPart then
+                obj:SetPrimaryPartCFrame(CFrame.new(pos))
+            else
+                obj:PivotTo(CFrame.new(pos))
+            end
+            for _, d in ipairs(obj:GetDescendants()) do
+                if d:IsA("BasePart") then
+                    d.Anchored = true
+                    d.CanCollide = false
                 end
-            end)
+            end
         end
+
+        Debris:AddItem(obj, IJ_Settings.AirStepLife)
     else
-        if jumpConn then
-            jumpConn:Disconnect()
-            jumpConn = nil
-        end
+        local p = Instance.new("Part")
+        p.Name = "AirStep"
+        p.Anchored = true
+        p.CanCollide = false
+        p.Size = IJ_Settings.AirStepSize
+        p.Material = IJ_Settings.AirStepMaterial
+        p.Color = Color3.new(1, 1, 1)
+        p.Transparency = IJ_Settings.AirStepTransparency
+        p.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad((tick()*180)%360), 0)
+        p.Parent = workspace
+        Debris:AddItem(p, IJ_Settings.AirStepLife)
     end
 end
 
-------------------------------------------------------------
--- LOGIC: KOMPAS UPDATE
-------------------------------------------------------------
-local function angleToDir(angle)
-    -- angle: 0 = N, 90 = E, 180 = S, 270 = W
-    if angle >= 337.5 or angle < 22.5 then
-        return "N"
-    elseif angle < 67.5 then
-        return "NE"
-    elseif angle < 112.5 then
-        return "E"
-    elseif angle < 157.5 then
-        return "SE"
-    elseif angle < 202.5 then
-        return "S"
-    elseif angle < 247.5 then
-        return "SW"
-    elseif angle < 292.5 then
-        return "W"
-    else
-        return "NW"
-    end
+local function IJ_bindCharacter(char: Model)
+    IJ_Humanoid = char:WaitForChild("Humanoid") :: Humanoid
+    IJ_Root     = char:WaitForChild("HumanoidRootPart") :: BasePart
+    IJ_JumpsDone = 0
+    IJ_Grounded  = false
+
+    IJ_Humanoid.StateChanged:Connect(function(_, newState)
+        if newState == Enum.HumanoidStateType.Landed
+        or newState == Enum.HumanoidStateType.Running
+        or newState == Enum.HumanoidStateType.RunningNoPhysics
+        or newState == Enum.HumanoidStateType.Swimming then
+            IJ_JumpsDone = 0
+            IJ_Grounded  = true
+        elseif newState == Enum.HumanoidStateType.Freefall then
+            IJ_Grounded = false
+        end
+    end)
 end
 
-runService.RenderStepped:Connect(function()
-    local cam = workspace.CurrentCamera or camera
-    if not cam then return end
+if LocalPlayer.Character then
+    IJ_bindCharacter(LocalPlayer.Character)
+end
+LocalPlayer.CharacterAdded:Connect(IJ_bindCharacter)
 
-    local look = cam.CFrame.LookVector
-    local flat = Vector3.new(look.X, 0, look.Z)
-    if flat.Magnitude < 1e-4 then
+-- Input lompat (Space / button jump)
+UserInputService.JumpRequest:Connect(function()
+    if not IJ_Enabled then return end
+    if not IJ_Humanoid or IJ_Humanoid.Health <= 0 then return end
+    if not IJ_isWhitelisted(LocalPlayer) then return end
+
+    if IJ_Grounded then
         return
     end
 
-    flat = flat.Unit
-    -- Hitung bearing: 0° = N, searah jarum jam
-    local bearing = math.deg(math.atan2(-flat.X, -flat.Z))
-    if bearing < 0 then
-        bearing = bearing + 360
-    end
+    if IJ_JumpsDone < (IJ_Settings.ExtraJumps or 0) then
+        IJ_JumpsDone += 1
 
-    if compassDir then
-        local dir = angleToDir(bearing)
-        compassDir.Text = string.format("%s (%.0f°)", dir, bearing)
+        local v = IJ_Root.Velocity
+        local upward = math.max(50, IJ_Humanoid.JumpPower * 1.15)
+        IJ_Root.Velocity = Vector3.new(v.X, upward, v.Z)
+
+        IJ_Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+        IJ_spawnAirStepVFX(IJ_Root.Position - Vector3.new(0, 3, 0))
     end
 end)
 
-------------------------------------------------------------
--- BIND TOGGLE UI
-------------------------------------------------------------
-local function bindToggleButton(btn, defaultState, onChanged)
-    local state = defaultState
-
-    local function applyVisual()
-        if state then
-            btn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
-            btn.Text             = "ON"
-        else
-            btn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
-            btn.Text             = "OFF"
+RunService.Heartbeat:Connect(function(dt)
+    if IJ_Humanoid and IJ_Humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+        IJ_AirTimer += dt
+        if IJ_AirTimer > 3 then
+            IJ_JumpsDone = math.min(IJ_JumpsDone, IJ_Settings.ExtraJumps or 0)
         end
+    else
+        IJ_AirTimer = 0
     end
+end)
 
-    applyVisual()
-    if onChanged then
-        onChanged(state)
-    end
+------------------------------------------------------
+-- UI TAB: Layout + Toggle Connect
+------------------------------------------------------
+do
+    -- header
+    local header = Instance.new("TextLabel")
+    header.Name = "UtilHeader"
+    header.Size = UDim2.new(1, -10, 0, 22)
+    header.Position = UDim2.new(0, 5, 0, 6)
+    header.BackgroundTransparency = 1
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 15
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.TextColor3 = Color3.fromRGB(40, 40, 70)
+    header.Text = "⚙️ Utilitas - ShiftRun & Infinite Jump"
+    header.Parent = TAB_FRAME
 
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        applyVisual()
-        if onChanged then
-            onChanged(state)
-        end
+    local sub = Instance.new("TextLabel")
+    sub.Name = "UtilSub"
+    sub.Size = UDim2.new(1, -10, 0, 38)
+    sub.Position = UDim2.new(0, 5, 0, 28)
+    sub.BackgroundTransparency = 1
+    sub.Font = Enum.Font.Gotham
+    sub.TextSize = 12
+    sub.TextWrapped = true
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.TextYAlignment = Enum.TextYAlignment.Top
+    sub.TextColor3 = Color3.fromRGB(90, 90, 120)
+    sub.Text = "ShiftRun: tahan LeftShift untuk lari (WalkSpeed 40 + anim + FOV 80).\nInfinite Jump: sampai 5x lompatan udara + pijakan VFX di bawah kaki."
+    sub.Parent = TAB_FRAME
+
+    local listHolder = Instance.new("Frame")
+    listHolder.Name = "ToggleList"
+    listHolder.Size = UDim2.new(1, -10, 1, -80)
+    listHolder.Position = UDim2.new(0, 5, 0, 70)
+    listHolder.BackgroundTransparency = 1
+    listHolder.Parent = TAB_FRAME
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.SortOrder = Enum.SortOrder.Name
+    layout.Padding = UDim.new(0, 6)
+    layout.Parent = listHolder
+
+    --------------------------------------------------
+    -- Toggle: ShiftRun
+    --------------------------------------------------
+    local rowShift = createToggleRow(
+        listHolder,
+        "1_ShiftRun",
+        "ShiftRun (LeftShift, anim, FOV 80 / 70)",
+        false -- default OFF
+    )
+
+    rowShift.OnChanged(function(state)
+        SR_sprintEnabled = state
+        SR_setSprintEnabled(state)
+
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "ShiftRun",
+                Text  = state and "ShiftRun AKTIF (tahan LeftShift untuk lari)."
+                              or "ShiftRun dimatikan.",
+                Duration = 4
+            })
+        end)
+    end)
+
+    --------------------------------------------------
+    -- Toggle: Infinite Jump
+    --------------------------------------------------
+    local rowInfJump = createToggleRow(
+        listHolder,
+        "2_InfiniteJump",
+        ("Infinite Jump (%d extra jump di udara + pijakan VFX)"):format(IJ_Settings.ExtraJumps),
+        false -- default OFF
+    )
+
+    rowInfJump.OnChanged(function(state)
+        IJ_Enabled = state
+        IJ_JumpsDone = 0
+
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Infinite Jump",
+                Text  = state and ("Infinite Jump AKTIF (%d extra jump)."):format(IJ_Settings.ExtraJumps)
+                              or "Infinite Jump dimatikan.",
+                Duration = 4
+            })
+        end)
     end)
 end
 
--- Row 1: ShiftRun
-local shiftRow, shiftBtn = createToggleRow(
-    "ShiftRun",
-    "Hold Shift → lari + FOV melebar."
-)
-bindToggleButton(shiftBtn, false, function(on)
-    setSprintEnabled(on)
-    if on then
-        safeNotify("ShiftRun", "Hold Shift untuk lari cepat.", 4)
-    end
-end)
-
--- Row 2: Infinite Jump
-local ijRow, ijBtn = createToggleRow(
-    "Infinite Jump",
-    "Spam lompat di udara (anti batas jump)."
-)
-bindToggleButton(ijBtn, false, function(on)
-    setInfiniteJumpEnabled(on)
-end)
-
-------------------------------------------------------------
--- RESET / CLEANUP (opsional untuk dipanggil dari CORE)
-------------------------------------------------------------
-local function resetUtil()
-    setSprintEnabled(false)
-    setInfiniteJumpEnabled(false)
-
-    local hum = humanoid or getHumanoid()
-    if hum then
-        hum.WalkSpeed = normalSpeed
-    end
-    local cam = workspace.CurrentCamera or camera
-    if cam then
-        cam.FieldOfView = normalFOV
-    end
-end
-
-_G.AxaHub_Util_Reset = resetUtil
+-- Tab util kelar: ShiftRun + InfiniteJump sekarang memakai mesin yang sama
+-- seperti script referensi kamu, tapi bisa ditoggle dari panel AxaHub.
