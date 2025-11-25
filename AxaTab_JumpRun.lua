@@ -1,12 +1,12 @@
 --==========================================================
 --  AxaTab_Util_JumpRunKompas.lua
---  TAB Util: ShiftRun + InfiniteJump + Compass HUD
+--  Fokus: ShiftRun + Infinite Jump + Kompas HUD (Bottom/Right)
 --  Env dari core:
 --      TAB_FRAME = Frame konten tab Util (sudah dibuat di core AxaHub)
 --==========================================================
 
 ------------------- SERVICES / ENV -------------------
-local TAB_FRAME = TAB_FRAME  -- diinject dari core
+local TAB_FRAME = TAB_FRAME  -- dari core AxaHub
 
 local Players              = game:GetService("Players")
 local RunService           = game:GetService("RunService")
@@ -16,6 +16,7 @@ local ContextActionService = game:GetService("ContextActionService")
 local StarterGui           = game:GetService("StarterGui")
 local Debris               = game:GetService("Debris")
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
+local GuiService           = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera      = workspace.CurrentCamera
@@ -71,16 +72,13 @@ local function createToggleRow(parent, orderName, labelText, defaultState)
     local function setState(newState)
         state = not not newState
         applyVisual()
-        if callback then
-            task.spawn(callback, state)
-        end
+        if callback then task.spawn(callback, state) end
     end
 
     checkBtn.MouseButton1Click:Connect(function()
         setState(not state)
     end)
 
-    -- Klik di seluruh row juga toggle
     local hit = Instance.new("TextButton")
     hit.BackgroundTransparency = 1
     hit.Text = ""
@@ -101,7 +99,7 @@ local function createToggleRow(parent, orderName, labelText, defaultState)
 end
 
 ------------------------------------------------------
--- SAFE CHAR PARTS + POSISI (dipakai umum)
+-- SAFE CHAR PARTS + POSISI
 ------------------------------------------------------
 local function safeCharParts(character)
     if not character then return end
@@ -115,28 +113,16 @@ end
 
 local function getCharPosition(char: Model?)
     if not char then return nil end
-
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    if hrp and hrp:IsA("BasePart") then
-        return hrp.Position
-    end
-
-    if char.PrimaryPart then
-        return char.PrimaryPart.Position
-    end
-
-    local ok, cframe = pcall(function()
-        return char:GetPivot()
-    end)
-    if ok and typeof(cframe) == "CFrame" then
-        return cframe.Position
-    end
-
+    if hrp and hrp:IsA("BasePart") then return hrp.Position end
+    if char.PrimaryPart then return char.PrimaryPart.Position end
+    local ok, cframe = pcall(function() return char:GetPivot() end)
+    if ok and typeof(cframe) == "CFrame" then return cframe.Position end
     return nil
 end
 
 ------------------------------------------------------
--- SHIFT RUN (sesuai script referensi)
+-- SHIFT RUN (persis mesin referensi kamu)
 ------------------------------------------------------
 local SR_AnimationID = 10862419793
 local SR_RunningSpeed = 40
@@ -157,44 +143,25 @@ local SR_HeartbeatConn = nil
 local function SR_ensureTweens()
     local inInfo  = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
     local outInfo = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-
     SR_TweenRun  = TweenService:Create(camera, inInfo,  { FieldOfView = SR_RunFOV })
     SR_TweenWalk = TweenService:Create(camera, outInfo, { FieldOfView = SR_NormalFOV })
 end
 
 local function SR_applyWalk()
-    if SR_Humanoid then
-        SR_Humanoid.WalkSpeed = SR_NormalSpeed
-    end
-    if SR_RAnimation and SR_RAnimation.IsPlaying then
-        pcall(function() SR_RAnimation:Stop() end)
-    end
-    if SR_TweenWalk then
-        SR_TweenWalk:Play()
-    else
-        camera.FieldOfView = SR_NormalFOV
-    end
+    if SR_Humanoid then SR_Humanoid.WalkSpeed = SR_NormalSpeed end
+    if SR_RAnimation and SR_RAnimation.IsPlaying then pcall(function() SR_RAnimation:Stop() end) end
+    if SR_TweenWalk then SR_TweenWalk:Play() else camera.FieldOfView = SR_NormalFOV end
 end
 
 local function SR_applyRun()
-    if SR_Humanoid then
-        SR_Humanoid.WalkSpeed = SR_RunningSpeed
-    end
-    if SR_RAnimation and not SR_RAnimation.IsPlaying then
-        pcall(function() SR_RAnimation:Play() end)
-    end
-    if SR_TweenRun then
-        SR_TweenRun:Play()
-    else
-        camera.FieldOfView = SR_RunFOV
-    end
+    if SR_Humanoid then SR_Humanoid.WalkSpeed = SR_RunningSpeed end
+    if SR_RAnimation and not SR_RAnimation.IsPlaying then pcall(function() SR_RAnimation:Play() end) end
+    if SR_TweenRun then SR_TweenRun:Play() else camera.FieldOfView = SR_RunFOV end
 end
 
 local function SR_setSprintEnabled(newVal)
     SR_sprintEnabled = newVal and true or false
-
     if not SR_Humanoid then return end
-
     if not SR_sprintEnabled then
         SR_Running = false
         SR_applyWalk()
@@ -202,78 +169,46 @@ local function SR_setSprintEnabled(newVal)
         local keyEnum = Enum.KeyCode[SR_KeyString] or Enum.KeyCode.LeftShift
         local holding = UserInputService:IsKeyDown(keyEnum)
         if holding and SR_Humanoid.MoveDirection.Magnitude > 0 then
-            SR_Running = true
-            SR_applyRun()
+            SR_Running = true; SR_applyRun()
         else
-            SR_Running = false
-            SR_applyWalk()
+            SR_Running = false; SR_applyWalk()
         end
     end
 end
 
 local function SR_bindShiftAction()
     local keyEnum = Enum.KeyCode[SR_KeyString] or Enum.KeyCode.LeftShift
-
-    pcall(function()
-        ContextActionService:UnbindAction(SR_ACTION_NAME)
-    end)
-
-    ContextActionService:BindAction(
-        SR_ACTION_NAME,
-        function(BindName, InputState)
-            if BindName ~= SR_ACTION_NAME then return end
-
-            if InputState == Enum.UserInputState.Begin then
-                SR_Running = true
-            elseif InputState == Enum.UserInputState.End then
-                SR_Running = false
-            end
-
-            if not SR_sprintEnabled then
-                SR_applyWalk()
-                return
-            end
-
-            if SR_Running then
-                SR_applyRun()
-            else
-                SR_applyWalk()
-            end
-        end,
-        true,
-        keyEnum
-    )
+    pcall(function() ContextActionService:UnbindAction(SR_ACTION_NAME) end)
+    ContextActionService:BindAction(SR_ACTION_NAME, function(BindName, InputState)
+        if BindName ~= SR_ACTION_NAME then return end
+        if InputState == Enum.UserInputState.Begin then SR_Running = true
+        elseif InputState == Enum.UserInputState.End then SR_Running = false end
+        if not SR_sprintEnabled then SR_applyWalk(); return end
+        if SR_Running then SR_applyRun() else SR_applyWalk() end
+    end, true, keyEnum)
 end
 
 local function SR_startHeartbeatEnforcement()
-    if SR_HeartbeatConn then
-        SR_HeartbeatConn:Disconnect()
-        SR_HeartbeatConn = nil
-    end
-
+    if SR_HeartbeatConn then SR_HeartbeatConn:Disconnect(); SR_HeartbeatConn = nil end
     SR_HeartbeatConn = RunService.Heartbeat:Connect(function()
         if not SR_Humanoid then return end
-
         if not SR_sprintEnabled then
             if SR_Humanoid.WalkSpeed ~= SR_NormalSpeed
-            or (SR_RAnimation and SR_RAnimation.IsPlaying)
-            or camera.FieldOfView ~= SR_NormalFOV
-            then
+               or (SR_RAnimation and SR_RAnimation.IsPlaying)
+               or camera.FieldOfView ~= SR_NormalFOV then
                 SR_applyWalk()
             end
         else
             if SR_Running then
                 if SR_Humanoid.WalkSpeed ~= SR_RunningSpeed
-                or (SR_RAnimation and not SR_RAnimation.IsPlaying)
-                or camera.FieldOfView ~= SR_RunFOV
-                then
+                   or (SR_RAnimation and not SR_RAnimation.IsPlaying)
+                   or camera.FieldOfView ~= SR_RunFOV then
                     SR_applyRun()
                 end
             else
                 if SR_Humanoid.WalkSpeed ~= SR_NormalSpeed
-                or (SR_RAnimation and SR_RAnimation.IsPlaying)
-                or camera.FieldOfView ~= SR_NormalFOV
-                then
+                   or (SR_RAnimation and SR_RAnimation.IsPlaying)
+                   or camera.FieldOfView ~= SR_NormalFOV then
                     SR_applyWalk()
                 end
             end
@@ -284,56 +219,31 @@ end
 local function SR_attachCharacter(char)
     SR_Humanoid = char:WaitForChild("Humanoid", 5)
     if not SR_Humanoid then return end
-
-    local anim = Instance.new("Animation")
-    anim.AnimationId = "rbxassetid://" .. SR_AnimationID
-
-    local ok, track = pcall(function()
-        return SR_Humanoid:LoadAnimation(anim)
-    end)
-    if ok then
-        SR_RAnimation = track
-    end
-
+    local anim = Instance.new("Animation"); anim.AnimationId = "rbxassetid://" .. SR_AnimationID
+    local ok, track = pcall(function() return SR_Humanoid:LoadAnimation(anim) end)
+    if ok then SR_RAnimation = track end
     SR_ensureTweens()
     camera.FieldOfView    = SR_NormalFOV
     SR_Humanoid.WalkSpeed = SR_NormalSpeed
-
     SR_Humanoid.Running:Connect(function(Speed)
-        if not SR_sprintEnabled then
-            SR_applyWalk()
-            return
-        end
-
-        if Speed >= 10 and SR_Running and SR_RAnimation and not SR_RAnimation.IsPlaying then
-            SR_applyRun()
-        elseif Speed >= 10 and (not SR_Running) and SR_RAnimation and SR_RAnimation.IsPlaying then
-            SR_applyWalk()
-        elseif Speed < 10 and SR_RAnimation and SR_RAnimation.IsPlaying then
-            SR_applyWalk()
-        end
+        if not SR_sprintEnabled then SR_applyWalk(); return end
+        if Speed >= 10 and SR_Running and SR_RAnimation and not SR_RAnimation.IsPlaying then SR_applyRun()
+        elseif Speed >= 10 and (not SR_Running) and SR_RAnimation and SR_RAnimation.IsPlaying then SR_applyWalk()
+        elseif Speed < 10 and SR_RAnimation and SR_RAnimation.IsPlaying then SR_applyWalk() end
     end)
-
     SR_Humanoid.Changed:Connect(function()
-        if SR_Humanoid.Jump and SR_RAnimation and SR_RAnimation.IsPlaying then
-            pcall(function() SR_RAnimation:Stop() end)
-        end
+        if SR_Humanoid.Jump and SR_RAnimation and SR_RAnimation.IsPlaying then pcall(function() SR_RAnimation:Stop() end) end
     end)
-
     SR_bindShiftAction()
     SR_startHeartbeatEnforcement()
-
-    -- sinkron dengan state toggle saat ini
     SR_setSprintEnabled(SR_sprintEnabled)
 end
 
-if LocalPlayer.Character then
-    SR_attachCharacter(LocalPlayer.Character)
-end
+if LocalPlayer.Character then SR_attachCharacter(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(SR_attachCharacter)
 
 ------------------------------------------------------
--- INFINITE JUMP (Double Jump, dibungkus toggle)
+-- INFINITE JUMP (sesuai scriptmu, dibungkus toggle)
 ------------------------------------------------------
 local IJ_Settings = {
     ExtraJumps          = 5,
@@ -355,11 +265,7 @@ local IJ_AirTimer  = 0
 local function IJ_isWhitelisted(p: Player): boolean
     local wl = IJ_Settings.WhiteList
     if wl and #wl > 0 then
-        for _, id in ipairs(wl) do
-            if id == p.UserId then
-                return true
-            end
-        end
+        for _, id in ipairs(wl) do if id == p.UserId then return true end end
         return false
     end
     return true
@@ -369,40 +275,23 @@ local JumpPlatformTemplate = ReplicatedStorage:FindFirstChild("JumpPlatform")
 
 local function IJ_spawnAirStepVFX(pos: Vector3)
     if not IJ_Settings.EnableAirStepVFX then return end
-
     if JumpPlatformTemplate then
         local obj = JumpPlatformTemplate:Clone()
-        obj.Name = "DJ_Pivot"
-        obj.Parent = workspace
-
+        obj.Name = "DJ_Pivot"; obj.Parent = workspace
         if obj:IsA("BasePart") then
-            obj.Anchored = true
-            obj.CanCollide = false
-            obj.CFrame = CFrame.new(pos)
+            obj.Anchored = true; obj.CanCollide = false; obj.CFrame = CFrame.new(pos)
         else
-            if obj.PrimaryPart then
-                obj:SetPrimaryPartCFrame(CFrame.new(pos))
-            else
-                obj:PivotTo(CFrame.new(pos))
-            end
+            if obj.PrimaryPart then obj:SetPrimaryPartCFrame(CFrame.new(pos)) else obj:PivotTo(CFrame.new(pos)) end
             for _, d in ipairs(obj:GetDescendants()) do
-                if d:IsA("BasePart") then
-                    d.Anchored = true
-                    d.CanCollide = false
-                end
+                if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end
             end
         end
-
         Debris:AddItem(obj, IJ_Settings.AirStepLife)
     else
         local p = Instance.new("Part")
-        p.Name  = "AirStep"
-        p.Anchored = true
-        p.CanCollide = false
-        p.Size   = IJ_Settings.AirStepSize
-        p.Material = IJ_Settings.AirStepMaterial
-        p.Color  = Color3.new(1, 1, 1)
-        p.Transparency = IJ_Settings.AirStepTransparency
+        p.Name = "AirStep"; p.Anchored = true; p.CanCollide = false
+        p.Size = IJ_Settings.AirStepSize; p.Material = IJ_Settings.AirStepMaterial
+        p.Color = Color3.new(1,1,1); p.Transparency = IJ_Settings.AirStepTransparency
         p.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad((tick()*180)%360), 0)
         p.Parent = workspace
         Debris:AddItem(p, IJ_Settings.AirStepLife)
@@ -412,45 +301,33 @@ end
 local function IJ_bindCharacter(char: Model)
     IJ_Humanoid = char:WaitForChild("Humanoid") :: Humanoid
     IJ_Root     = char:WaitForChild("HumanoidRootPart") :: BasePart
-    IJ_JumpsDone = 0
-    IJ_Grounded  = false
-
+    IJ_JumpsDone = 0; IJ_Grounded = false
     IJ_Humanoid.StateChanged:Connect(function(_, newState)
         if newState == Enum.HumanoidStateType.Landed
         or newState == Enum.HumanoidStateType.Running
         or newState == Enum.HumanoidStateType.RunningNoPhysics
         or newState == Enum.HumanoidStateType.Swimming then
-            IJ_JumpsDone = 0
-            IJ_Grounded  = true
+            IJ_JumpsDone = 0; IJ_Grounded = true
         elseif newState == Enum.HumanoidStateType.Freefall then
             IJ_Grounded = false
         end
     end)
 end
 
-if LocalPlayer.Character then
-    IJ_bindCharacter(LocalPlayer.Character)
-end
+if LocalPlayer.Character then IJ_bindCharacter(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(IJ_bindCharacter)
 
 UserInputService.JumpRequest:Connect(function()
     if not IJ_Enabled then return end
     if not IJ_Humanoid or IJ_Humanoid.Health <= 0 then return end
     if not IJ_isWhitelisted(LocalPlayer) then return end
-
-    if IJ_Grounded then
-        return
-    end
-
+    if IJ_Grounded then return end
     if IJ_JumpsDone < (IJ_Settings.ExtraJumps or 0) then
         IJ_JumpsDone += 1
-
         local v = IJ_Root.Velocity
         local upward = math.max(50, IJ_Humanoid.JumpPower * 1.15)
         IJ_Root.Velocity = Vector3.new(v.X, upward, v.Z)
-
         IJ_Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-
         IJ_spawnAirStepVFX(IJ_Root.Position - Vector3.new(0, 3, 0))
     end
 end)
@@ -458,128 +335,49 @@ end)
 RunService.Heartbeat:Connect(function(dt)
     if IJ_Humanoid and IJ_Humanoid:GetState() == Enum.HumanoidStateType.Freefall then
         IJ_AirTimer += dt
-        if IJ_AirTimer > 3 then
-            IJ_JumpsDone = math.min(IJ_JumpsDone, IJ_Settings.ExtraJumps or 0)
-        end
+        if IJ_AirTimer > 3 then IJ_JumpsDone = math.min(IJ_JumpsDone, IJ_Settings.ExtraJumps or 0) end
     else
         IJ_AirTimer = 0
     end
 end)
 
 ------------------------------------------------------
--- COMPASS HUD (Center HUD, bisa di-toggle)
+-- KOMPAS HUD (terintegrasi, bisa Bottom / Right)
 ------------------------------------------------------
-local COMPASS_WIDTH         = 480
-local COMPASS_HEIGHT        = 44
-local COMPASS_MARGIN_TOP    = 12
-local COMPASS_BG_TRANSP     = 0.35
-local COMPASS_PIXELS_PER_DEG = 2
-local COMPASS_TICK_EVERY    = 10
-local COMPASS_TICK_H_MIN    = 8
-local COMPASS_TICK_H_MID    = 12
-local COMPASS_TICK_H_MAX    = 18
+local Compass = {}
+do
+    -- Konfigurasi default
+    local WIDTH            = 480
+    local HEIGHT           = 44
+    local MARGIN_BOTTOM    = 16
+    local MARGIN_RIGHT     = 16
+    local BG_TRANSP        = 0.35
+    local PIXELS_PER_DEG   = 2
+    local TICK_EVERY       = 10
+    local TICK_H_MIN       = 8
+    local TICK_H_MID       = 12
+    local TICK_H_MAX       = 18
 
-local CompassGUI            = nil
-local CompassConnections    = {}
-local CompassEnabled        = false
+    -- State UI
+    local gui, container, headingLabel, centerArrow, tapeHolder, tape
+    local SEG_W = 360 * PIXELS_PER_DEG
+    local rsConn
+    local positionMode = "bottom"  -- "bottom" | "right"
+    local enabled = false
 
-local function Compass_GiveConn(conn)
-    table.insert(CompassConnections, conn)
-    return conn
-end
-
-local function Compass_Clear()
-    for _, c in ipairs(CompassConnections) do
-        c:Disconnect()
+    -- Label arah (Indonesia)
+    local FULL_DIRS = { "Utara","Timur Laut","Timur","Tenggara","Selatan","Barat Daya","Barat","Barat Laut" }
+    local function yawDegFromLook(v: Vector3)
+        local deg = math.deg(math.atan2(v.X, v.Z))
+        return (deg % 360 + 360) % 360
     end
-    CompassConnections = {}
-    if CompassGUI then
-        CompassGUI:Destroy()
-        CompassGUI = nil
-    end
-end
-
-local function yawDegFromLook(v: Vector3)
-    local deg = math.deg(math.atan2(v.X, v.Z))
-    return (deg % 360 + 360) % 360
-end
-
-local function Compass_CreateUI()
-    Compass_Clear()
-
-    local pg = LocalPlayer:WaitForChild("PlayerGui")
-    local old = pg:FindFirstChild("CenterCompassHUD")
-    if old then old:Destroy() end
-
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "CenterCompassHUD"
-    gui.IgnoreGuiInset = true
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.Parent = pg
-    CompassGUI = gui
-
-    local container = Instance.new("Frame")
-    container.Name = "CompassContainer"
-    container.AnchorPoint = Vector2.new(0.5, 0)
-    container.Position = UDim2.new(0.5, 0, 0, COMPASS_MARGIN_TOP)
-    container.Size = UDim2.fromOffset(COMPASS_WIDTH, COMPASS_HEIGHT)
-    container.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    container.BackgroundTransparency = COMPASS_BG_TRANSP
-    container.BorderSizePixel = 0
-    container.ClipsDescendants = true
-    container.Parent = gui
-
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
-    local stroke = Instance.new("UIStroke", container)
-    stroke.Thickness = 1
-    stroke.Color = Color3.fromRGB(255,255,255)
-    stroke.Transparency = 0.75
-
-    local headingLabel = Instance.new("TextLabel")
-    headingLabel.BackgroundTransparency = 1
-    headingLabel.Size = UDim2.new(1, -16, 0, 18)
-    headingLabel.Position = UDim2.fromOffset(8, 4)
-    headingLabel.Font = Enum.Font.GothamBold
-    headingLabel.TextSize = 14
-    headingLabel.TextColor3 = Color3.fromRGB(230,230,230)
-    headingLabel.TextXAlignment = Enum.TextXAlignment.Left
-    headingLabel.Text = "Arah: -"
-    headingLabel.Parent = container
-
-    local centerArrow = Instance.new("TextLabel")
-    centerArrow.BackgroundTransparency = 1
-    centerArrow.Size = UDim2.fromOffset(20, 20)
-    centerArrow.AnchorPoint = Vector2.new(0.5, 1)
-    centerArrow.Position = UDim2.new(0.5, 0, 1, -4)
-    centerArrow.Font = Enum.Font.GothamBold
-    centerArrow.TextSize = 16
-    centerArrow.TextColor3 = Color3.fromRGB(255, 90, 90)
-    centerArrow.Text = "▲"
-    centerArrow.Parent = container
-
-    local tapeHolder = Instance.new("Frame")
-    tapeHolder.Name = "TapeHolder"
-    tapeHolder.BackgroundTransparency = 1
-    tapeHolder.Size = UDim2.new(1, 0, 1, -20)
-    tapeHolder.Position = UDim2.fromOffset(0, 20)
-    tapeHolder.Parent = container
-
-    local SEG_W = 360 * COMPASS_PIXELS_PER_DEG
-
-    local tape = Instance.new("Frame")
-    tape.Name = "Tape"
-    tape.BackgroundTransparency = 1
-    tape.Size = UDim2.new(0, SEG_W * 3, 1, 0)
-    tape.Position = UDim2.fromOffset(0, 0)
-    tape.Parent = tapeHolder
 
     local function addTick(parent, x, h)
         local tick = Instance.new("Frame")
         tick.Size = UDim2.fromOffset(2, h)
         tick.AnchorPoint = Vector2.new(0.5, 1)
         tick.Position = UDim2.fromOffset(x, tapeHolder.AbsoluteSize.Y - 4)
-        tick.BackgroundColor3 = Color3.fromRGB(220,220,220)
+        tick.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
         tick.BorderSizePixel = 0
         tick.Parent = parent
         return tick
@@ -591,9 +389,9 @@ local function Compass_CreateUI()
         lbl.Text = text
         lbl.Font = Enum.Font.GothamBold
         lbl.TextSize = size
-        lbl.TextColor3 = Color3.fromRGB(230,230,230)
+        lbl.TextColor3 = Color3.fromRGB(230, 230, 230)
         lbl.AnchorPoint = Vector2.new(0.5, 1)
-        lbl.Position = UDim2.fromOffset(x, tapeHolder.AbsoluteSize.Y - 6 - COMPASS_TICK_H_MAX)
+        lbl.Position = UDim2.fromOffset(x, tapeHolder.AbsoluteSize.Y - 6 - TICK_H_MAX)
         lbl.Size = UDim2.fromOffset(44, 18)
         lbl.Parent = parent
         return lbl
@@ -601,109 +399,189 @@ local function Compass_CreateUI()
 
     local function labelForDeg(degInt)
         local d = (degInt % 360 + 360) % 360
-        if d == 0   then return "U"   -- Utara
-        elseif d == 45  then return "TL" -- Timur Laut
-        elseif d == 90  then return "T"  -- Timur
-        elseif d == 135 then return "TG" -- Tenggara
-        elseif d == 180 then return "S"  -- Selatan
-        elseif d == 225 then return "BD" -- Barat Daya
-        elseif d == 270 then return "B"  -- Barat
-        elseif d == 315 then return "BL" -- Barat Laut
-        end
+        if d == 0 then return "U"
+        elseif d == 45  then return "TL"
+        elseif d == 90  then return "T"
+        elseif d == 135 then return "TG"
+        elseif d == 180 then return "S"
+        elseif d == 225 then return "BD"
+        elseif d == 270 then return "B"
+        elseif d == 315 then return "BL" end
         return nil
     end
 
     local function buildSegment(parent, xOffset)
-        for deg = 0, 359, COMPASS_TICK_EVERY do
-            local px = xOffset + deg * COMPASS_PIXELS_PER_DEG
+        for deg = 0, 359, TICK_EVERY do
+            local px = xOffset + deg * PIXELS_PER_DEG
             local lbl = labelForDeg(deg)
             if lbl then
-                addTick(parent, px, COMPASS_TICK_H_MAX)
+                addTick(parent, px, TICK_H_MAX)
                 addText(parent, px, lbl, 12)
             elseif deg % 30 == 0 then
-                addTick(parent, px, COMPASS_TICK_H_MID)
+                addTick(parent, px, TICK_H_MID)
                 addText(parent, px, tostring(deg), 10)
             else
-                addTick(parent, px, COMPASS_TICK_H_MIN)
+                addTick(parent, px, TICK_H_MIN)
             end
         end
     end
-
-    buildSegment(tape, 0)
-    buildSegment(tape, SEG_W)
-    buildSegment(tape, SEG_W * 2)
-
-    local FULL_DIRS = {
-        "Utara", "Timur Laut", "Timur", "Tenggara",
-        "Selatan", "Barat Daya", "Barat", "Barat Laut"
-    }
 
     local function rebuildTicksY()
         for _, c in ipairs(tape:GetChildren()) do
             if c:IsA("Frame") then
                 c.Position = UDim2.fromOffset(c.Position.X.Offset, tapeHolder.AbsoluteSize.Y - 4)
             elseif c:IsA("TextLabel") then
-                c.Position = UDim2.fromOffset(c.Position.X.Offset, tapeHolder.AbsoluteSize.Y - 6 - COMPASS_TICK_H_MAX)
+                c.Position = UDim2.fromOffset(c.Position.X.Offset, tapeHolder.AbsoluteSize.Y - 6 - TICK_H_MAX)
             end
         end
     end
 
+    local function setPositionMode(mode)
+        positionMode = (mode == "right") and "right" or "bottom"
+        if not container then return end
+
+        if positionMode == "bottom" then
+            container.AnchorPoint = Vector2.new(0.5, 1)
+            container.Position    = UDim2.new(0.5, 0, 1, -MARGIN_BOTTOM)
+            container.Size        = UDim2.fromOffset(WIDTH, HEIGHT)
+            centerArrow.Rotation  = 0
+            centerArrow.Position  = UDim2.new(0.5, 0, 1, -4)
+        else
+            -- Samping kanan (vertikal semu tetap horizontal—lebih praktis)
+            container.AnchorPoint = Vector2.new(1, 0.5)
+            container.Position    = UDim2.new(1, -MARGIN_RIGHT, 0.5, 0)
+            container.Size        = UDim2.fromOffset(WIDTH, HEIGHT)
+            centerArrow.Rotation  = 90
+            centerArrow.Position  = UDim2.new(1, -12, 0.5, 0)
+        end
+    end
+
     local function updateTape()
-        if not CompassGUI or not CompassGUI.Enabled then return end
-
-        local cam = workspace.CurrentCamera
-        if not cam then return end
-
-        local look = cam.CFrame.LookVector
+        if not camera then return end
+        local look = camera.CFrame.LookVector
         local deg  = yawDegFromLook(look)
-
         local centerX = math.floor(container.AbsoluteSize.X / 2 + 0.5)
-        local desired = centerX - (SEG_W + deg * COMPASS_PIXELS_PER_DEG)
+        local desired = centerX - (SEG_W + deg * PIXELS_PER_DEG)
         tape.Position = UDim2.fromOffset(desired, 0)
-
         local idx8 = math.floor((deg + 22.5) / 45) % 8 + 1
         headingLabel.Text = ("Arah: %s (%.0f°)"):format(FULL_DIRS[idx8], deg)
     end
 
-    Compass_GiveConn(tapeHolder:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-        tape.Size = UDim2.new(0, SEG_W * 3, 1, 0)
-        rebuildTicksY()
-        updateTape()
-    end))
-
-    Compass_GiveConn(container:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateTape))
-    Compass_GiveConn(gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateTape))
-
-    Compass_GiveConn(RunService.RenderStepped:Connect(function()
-        updateTape()
-    end))
-
-    task.defer(function()
-        for _ = 1, 5 do
-            updateTape()
-            task.wait(0.05)
-        end
-    end)
-end
-
-local function Compass_SetEnabled(state)
-    state = not not state
-    CompassEnabled = state
-    if state then
-        if not CompassGUI then
-            Compass_CreateUI()
-        else
-            CompassGUI.Enabled = true
-        end
-    else
-        Compass_Clear()
+    local function destroy()
+        enabled = false
+        if rsConn then rsConn:Disconnect(); rsConn = nil end
+        if gui then gui:Destroy(); gui = nil end
+        container, headingLabel, centerArrow, tapeHolder, tape = nil, nil, nil, nil, nil
     end
+
+    local function create()
+        destroy()
+        enabled = true
+
+        -- pastikan tidak dobel dari skrip lama
+        local pg = LocalPlayer:WaitForChild("PlayerGui")
+        local old1 = pg:FindFirstChild("CenterCompassHUD")
+        if old1 then old1:Destroy() end
+        local old2 = pg:FindFirstChild("AxaHUD_Compass")
+        if old2 then old2:Destroy() end
+
+        gui = Instance.new("ScreenGui")
+        gui.Name = "AxaHUD_Compass"
+        gui.IgnoreGuiInset = true
+        gui.ResetOnSpawn = false
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        gui.DisplayOrder = 50
+        gui.Parent = pg
+
+        container = Instance.new("Frame")
+        container.Name = "CompassContainer"
+        container.Size = UDim2.fromOffset(WIDTH, HEIGHT)
+        container.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        container.BackgroundTransparency = BG_TRANSP
+        container.BorderSizePixel = 0
+        container.ClipsDescendants = true
+        container.Parent = gui
+        Instance.new("UICorner", container).CornerRadius = UDim.new(0, 10)
+        local stroke = Instance.new("UIStroke", container)
+        stroke.Thickness = 1
+        stroke.Color = Color3.fromRGB(255,255,255)
+        stroke.Transparency = 0.75
+
+        headingLabel = Instance.new("TextLabel")
+        headingLabel.BackgroundTransparency = 1
+        headingLabel.Size = UDim2.new(1, -16, 0, 18)
+        headingLabel.Position = UDim2.fromOffset(8, 4)
+        headingLabel.Font = Enum.Font.GothamBold
+        headingLabel.TextSize = 14
+        headingLabel.TextColor3 = Color3.fromRGB(230,230,230)
+        headingLabel.TextXAlignment = Enum.TextXAlignment.Left
+        headingLabel.Text = "Arah: -"
+        headingLabel.Parent = container
+
+        centerArrow = Instance.new("TextLabel")
+        centerArrow.BackgroundTransparency = 1
+        centerArrow.Size = UDim2.fromOffset(20, 20)
+        centerArrow.AnchorPoint = Vector2.new(0.5, 1)
+        centerArrow.Font = Enum.Font.GothamBold
+        centerArrow.TextSize = 16
+        centerArrow.TextColor3 = Color3.fromRGB(255, 90, 90)
+        centerArrow.Text = "▲"
+        centerArrow.Parent = container
+
+        tapeHolder = Instance.new("Frame")
+        tapeHolder.Name = "TapeHolder"
+        tapeHolder.BackgroundTransparency = 1
+        tapeHolder.Size = UDim2.new(1, 0, 1, -20)
+        tapeHolder.Position = UDim2.fromOffset(0, 20)
+        tapeHolder.Parent = container
+
+        tape = Instance.new("Frame")
+        tape.Name = "Tape"
+        tape.BackgroundTransparency = 1
+        tape.Size = UDim2.fromOffset(SEG_W * 3, tapeHolder.AbsoluteSize.Y)
+        tape.Position = UDim2.fromOffset(0, 0)
+        tape.Parent = tapeHolder
+
+        tapeHolder:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            tape.Size = UDim2.fromOffset(SEG_W * 3, tapeHolder.AbsoluteSize.Y)
+            rebuildTicksY()
+        end)
+
+        buildSegment(tape, 0)
+        buildSegment(tape, SEG_W)
+        buildSegment(tape, SEG_W * 2)
+
+        setPositionMode(positionMode) -- posisikan sesuai state
+
+        rsConn = RunService.RenderStepped:Connect(function()
+            if enabled then updateTape() end
+        end)
+        task.defer(function()
+            for _ = 1, 5 do
+                updateTape(); task.wait(0.05)
+            end
+        end)
+    end
+
+    Compass.Create  = create
+    Compass.Destroy = destroy
+    Compass.SetVisible = function(v)
+        if v and not gui then create()
+        elseif (not v) and gui then destroy()
+        end
+    end
+    Compass.SetPositionMode = function(mode)
+        positionMode = (mode == "right") and "right" or "bottom"
+        if gui and container then setPositionMode(positionMode) end
+    end
+    Compass.GetPositionMode = function() return positionMode end
 end
 
 ------------------------------------------------------
 -- UI TAB: Layout + Toggle Connect
 ------------------------------------------------------
 do
+    -- header
     local header = Instance.new("TextLabel")
     header.Name = "UtilHeader"
     header.Size = UDim2.new(1, -10, 0, 22)
@@ -727,12 +605,12 @@ do
     sub.TextXAlignment = Enum.TextXAlignment.Left
     sub.TextYAlignment = Enum.TextYAlignment.Top
     sub.TextColor3 = Color3.fromRGB(90, 90, 120)
-    sub.Text = "ShiftRun: tahan LeftShift untuk lari (Speed 40 + anim + FOV 80).\nInfinite Jump: sampai 5x lompatan udara + pijakan VFX. Kompas: HUD arah di tengah atas layar."
+    sub.Text = "ShiftRun: tahan LeftShift (WalkSpeed 40 + anim + FOV 80).  Infinite Jump: +5 lompatan udara.\nKompas: pita derajat, label U/T/S/B (Bahasa Indonesia) dengan mode posisi Bawah/Samping."
     sub.Parent = TAB_FRAME
 
     local listHolder = Instance.new("Frame")
     listHolder.Name = "ToggleList"
-    listHolder.Size = UDim2.new(1, -10, 1, -80)
+    listHolder.Size = UDim2.new(1, -10, 1, -110)
     listHolder.Position = UDim2.new(0, 5, 0, 70)
     listHolder.BackgroundTransparency = 1
     listHolder.Parent = TAB_FRAME
@@ -743,71 +621,133 @@ do
     layout.Padding = UDim.new(0, 6)
     layout.Parent = listHolder
 
-    -- Toggle 1: ShiftRun
+    -- Toggle: ShiftRun
     local rowShift = createToggleRow(
         listHolder,
         "1_ShiftRun",
-        "ShiftRun (LeftShift, anim, FOV 80/70)",
+        "ShiftRun (LeftShift, anim, FOV 80 / 70)",
         false
     )
-
     rowShift.OnChanged(function(state)
         SR_sprintEnabled = state
         SR_setSprintEnabled(state)
-
         pcall(function()
             StarterGui:SetCore("SendNotification", {
                 Title = "ShiftRun",
-                Text  = state and "ShiftRun AKTIF (tahan LeftShift untuk lari)."
-                              or "ShiftRun dimatikan.",
-                Duration = 4
+                Text  = state and "ShiftRun AKTIF (tahan LeftShift)." or "ShiftRun dimatikan.",
+                Duration = 3
             })
         end)
     end)
 
-    -- Toggle 2: Infinite Jump
+    -- Toggle: Infinite Jump
     local rowInfJump = createToggleRow(
         listHolder,
         "2_InfiniteJump",
         ("Infinite Jump (%d extra jump di udara + pijakan VFX)"):format(IJ_Settings.ExtraJumps),
         false
     )
-
     rowInfJump.OnChanged(function(state)
         IJ_Enabled = state
         IJ_JumpsDone = 0
-
         pcall(function()
             StarterGui:SetCore("SendNotification", {
                 Title = "Infinite Jump",
-                Text  = state and ("Infinite Jump AKTIF (%d extra jump)."):format(IJ_Settings.ExtraJumps)
-                              or "Infinite Jump dimatikan.",
-                Duration = 4
+                Text  = state and ("Aktif (%d extra jump)."):format(IJ_Settings.ExtraJumps) or "Dimatikan.",
+                Duration = 3
             })
         end)
     end)
 
-    -- Toggle 3: Compass HUD
+    -- Toggle: Kompas HUD
     local rowCompass = createToggleRow(
         listHolder,
         "3_CompassHUD",
-        "Kompas HUD tengah (▲ + arah Utara/Timur, dll.)",
-        true -- default menyala, seperti sebelumnya
+        "Kompas HUD (pita derajat & heading)",
+        true -- default aktif, biar langsung terasa
     )
-
     rowCompass.OnChanged(function(state)
-        Compass_SetEnabled(state)
-
+        Compass.SetVisible(state)
         pcall(function()
             StarterGui:SetCore("SendNotification", {
-                Title = "Compass HUD",
-                Text  = state and "Kompas HUD di tengah layar AKTIF."
-                              or "Kompas HUD dimatikan.",
-                Duration = 4
+                Title = "Kompas",
+                Text  = state and "Kompas ditampilkan." or "Kompas disembunyikan.",
+                Duration = 2
+            })
+        end)
+    end)
+    -- Inisialisasi kompas ke state awal
+    Compass.SetVisible(rowCompass.Get())
+
+    -- Baris kecil untuk posisi kompas: Bawah / Samping
+    local posRow = Instance.new("Frame")
+    posRow.Name = "3b_CompassPos"
+    posRow.Size = UDim2.new(1, 0, 0, 30)
+    posRow.BackgroundTransparency = 1
+    posRow.Parent = listHolder
+
+    local posLabel = Instance.new("TextLabel")
+    posLabel.BackgroundTransparency = 1
+    posLabel.Size = UDim2.new(0, 140, 1, 0)
+    posLabel.Font = Enum.Font.Gotham
+    posLabel.TextSize = 13
+    posLabel.TextXAlignment = Enum.TextXAlignment.Left
+    posLabel.TextColor3 = Color3.fromRGB(40, 40, 70)
+    posLabel.Text = "Posisi Kompas:"
+    posLabel.Parent = posRow
+
+    local function styleBtn(btn, active)
+        btn.BackgroundColor3 = active and Color3.fromRGB(140, 190, 255) or Color3.fromRGB(220, 222, 235)
+        btn.TextColor3       = active and Color3.fromRGB(20, 30, 50)   or Color3.fromRGB(50, 60, 90)
+    end
+
+    local btnBottom = Instance.new("TextButton")
+    btnBottom.Size = UDim2.new(0, 100, 0, 26)
+    btnBottom.Position = UDim2.new(0, 150, 0, 2)
+    btnBottom.Font = Enum.Font.GothamSemibold
+    btnBottom.TextSize = 13
+    btnBottom.Text = "Bawah"
+    btnBottom.Parent = posRow
+    Instance.new("UICorner", btnBottom).CornerRadius = UDim.new(0, 7)
+
+    local btnRight = Instance.new("TextButton")
+    btnRight.Size = UDim2.new(0, 100, 0, 26)
+    btnRight.Position = UDim2.new(0, 256, 0, 2)
+    btnRight.Font = Enum.Font.GothamSemibold
+    btnRight.TextSize = 13
+    btnRight.Text = "Samping"
+    btnRight.Parent = posRow
+    Instance.new("UICorner", btnRight).CornerRadius = UDim.new(0, 7)
+
+    -- sinkron awal
+    styleBtn(btnBottom, Compass.GetPositionMode() == "bottom")
+    styleBtn(btnRight, Compass.GetPositionMode() == "right")
+
+    btnBottom.MouseButton1Click:Connect(function()
+        Compass.SetPositionMode("bottom")
+        styleBtn(btnBottom, true)
+        styleBtn(btnRight, false)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Kompas",
+                Text  = "Posisi: Bawah",
+                Duration = 2
             })
         end)
     end)
 
-    -- sinkron default kompas (defaultState = true)
-    Compass_SetEnabled(rowCompass.Get())
+    btnRight.MouseButton1Click:Connect(function()
+        Compass.SetPositionMode("right")
+        styleBtn(btnBottom, false)
+        styleBtn(btnRight, true)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Kompas",
+                Text  = "Posisi: Samping Kanan",
+                Duration = 2
+            })
+        end)
+    end)
 end
+
+-- Selesai: tab util kini memuat ShiftRun, Infinite Jump, dan Kompas (HUD)
