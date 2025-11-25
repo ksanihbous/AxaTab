@@ -1,20 +1,32 @@
 --==========================================================
---  AxaTab_Webhook.lua
---  Env:
---    TAB_FRAME, Players, LocalPlayer, HttpService, StarterGui, VirtualInputManager, dll.
+--  AxaTab_Webhook.lua (TAB Webhook Backpack View)
+--  Env yang DIHARAPKAN dari Core:
+--    TAB_FRAME  = frame putih konten tab
+--  Script ini tetap mandiri:
+--    ambil sendiri Players, HttpService, StarterGui, dll
 --==========================================================
 
-local webhookTabFrame = TAB_FRAME
+------------------- SERVICES / ENV -------------------
+local TAB_FRAME   = TAB_FRAME  -- dari core
+local Players     = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local StarterGui  = game:GetService("StarterGui")
 
+local LocalPlayer = Players.LocalPlayer
+
+------------------- KONFIG DISCORD -------------------
 local WEBHOOK_URL    = "https://discord.com/api/webhooks/1440379761389080597/yRL_Ek5RSttD-cMVPE6f0VtfpuRdMcVOjq4IkqtFOycPKjwFCiojViQGwXd_7AqXRM2P"
+local BOT_NAME       = "Axa Backview"
 local BOT_AVATAR_URL = "https://mylogo.edgeone.app/Logo%20Ax%20(NO%20BG).png"
-local MAX_DESC       = 3600
+local MAX_DESC       = 3600 -- aman dari limit 4096 Discord
 
+-- Kata kunci deteksi ikan (boleh kamu tambah)
 local FISH_KEYWORDS = {
     "ikan","fish","mirethos","kaelvorn","kraken",
     "shark","whale","ray","eel","salmon","tuna","cod"
 }
 
+-- Nama ikan favorit (tambahan di luar "(Favorite)" di nama)
 local FAVORITE_FISH_NAMES = {
     "lumba pink",
     "lele",
@@ -22,32 +34,8 @@ local FAVORITE_FISH_NAMES = {
     "kaelvorn",
 }
 
-local function extractFishWeightKg(name)
-    if not name then return nil end
-    local lower = string.lower(name)
-    local numStr = lower:match("(%d+%.?%d*)%s*kg") or lower:match("(%d+%.?%d*)")
-    if not numStr then return nil end
-    local w = tonumber(numStr)
-    if not w then return nil end
-    return w
-end
-
-local function getFishBaseName(rawName)
-    if not rawName or rawName == "" then
-        return "Unknown Fish"
-    end
-
-    local name = rawName
-    name = name:gsub("%b[]", "")
-    name = name:gsub("%b()", "")
-    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")
-    name = name:gsub("%s*%d+[%d%.]*$", "")
-    name = name:gsub("^%s+", ""):gsub("%s+$", "")
-    if name == "" then
-        name = rawName
-    end
-    return name
-end
+------------------- UI BUILD -------------------
+local tabFrame = TAB_FRAME
 
 local whHeader = Instance.new("TextLabel")
 whHeader.Name = "Header"
@@ -59,11 +47,11 @@ whHeader.TextSize = 15
 whHeader.TextColor3 = Color3.fromRGB(40, 40, 60)
 whHeader.TextXAlignment = Enum.TextXAlignment.Left
 whHeader.Text = "📡 Webhook Backpack View"
-whHeader.Parent = webhookTabFrame
+whHeader.Parent = tabFrame
 
 local whSub = Instance.new("TextLabel")
 whSub.Name = "Sub"
-whSub.Size = UDim2.new(1, -10, 0, 32)
+whSub.Size = UDim2.new(1, -10, 0, 34)
 whSub.Position = UDim2.new(0, 5, 0, 26)
 whSub.BackgroundTransparency = 1
 whSub.Font = Enum.Font.Gotham
@@ -73,7 +61,7 @@ whSub.TextXAlignment = Enum.TextXAlignment.Left
 whSub.TextYAlignment = Enum.TextYAlignment.Top
 whSub.TextWrapped = true
 whSub.Text = "Pilih player (checkbox). Rod & Ikan dinomori per kategori. Auto split Part ke Discord + Total & Ikan Favorite di Part terakhir."
-whSub.Parent = webhookTabFrame
+whSub.Parent = tabFrame
 
 local whSendBtn = Instance.new("TextButton")
 whSendBtn.Name = "SendBtn"
@@ -85,7 +73,7 @@ whSendBtn.Font = Enum.Font.GothamBold
 whSendBtn.TextSize = 13
 whSendBtn.TextColor3 = Color3.fromRGB(255,255,255)
 whSendBtn.Text = "Send to Discord"
-whSendBtn.Parent = webhookTabFrame
+whSendBtn.Parent = tabFrame
 
 local whSendCorner = Instance.new("UICorner")
 whSendCorner.CornerRadius = UDim.new(0, 8)
@@ -101,7 +89,7 @@ whSelectAll.Font = Enum.Font.GothamBold
 whSelectAll.TextSize = 12
 whSelectAll.TextColor3 = Color3.fromRGB(60, 60, 90)
 whSelectAll.Text = "Select All"
-whSelectAll.Parent = webhookTabFrame
+whSelectAll.Parent = tabFrame
 
 local whSelCorner = Instance.new("UICorner")
 whSelCorner.CornerRadius = UDim.new(0, 8)
@@ -119,7 +107,7 @@ whSearchBox.TextXAlignment = Enum.TextXAlignment.Left
 whSearchBox.ClearTextOnFocus = false
 whSearchBox.Text = ""
 whSearchBox.PlaceholderText = "Search.."
-whSearchBox.Parent = webhookTabFrame
+whSearchBox.Parent = tabFrame
 
 local whSearchCorner = Instance.new("UICorner")
 whSearchCorner.CornerRadius = UDim.new(0, 8)
@@ -135,7 +123,7 @@ whStatus.TextSize = 12
 whStatus.TextColor3 = Color3.fromRGB(90, 90, 120)
 whStatus.TextXAlignment = Enum.TextXAlignment.Left
 whStatus.Text = "Status: Ready"
-whStatus.Parent = webhookTabFrame
+whStatus.Parent = tabFrame
 
 local whList = Instance.new("ScrollingFrame")
 whList.Name = "WebhookList"
@@ -145,7 +133,7 @@ whList.BackgroundTransparency = 1
 whList.BorderSizePixel = 0
 whList.ScrollBarThickness = 4
 whList.CanvasSize = UDim2.new(0, 0, 0, 0)
-whList.Parent = webhookTabFrame
+whList.Parent = tabFrame
 
 local whLayout = Instance.new("UIListLayout")
 whLayout.FillDirection = Enum.FillDirection.Vertical
@@ -157,14 +145,16 @@ whLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     whList.CanvasSize = UDim2.new(0, 0, 0, whLayout.AbsoluteContentSize.Y + 10)
 end)
 
-local whRows           = {}
-local whSelected       = {}
+------------------- STATE LIST PLAYER -------------------
+local whRows           = {}  -- [Player] = rowFrame
+local whSelected       = {}  -- [Player] = bool
 local whSelectAllState = false
 
 local function setWebhookStatus(msg)
     whStatus.Text = "Status: " .. msg
 end
 
+------------------- FILTER SEARCH -------------------
 local function webhookMatchesSearch(pl)
     local q = string.lower(whSearchBox.Text or "")
     if q == "" then return true end
@@ -185,6 +175,7 @@ local function applyWebhookSearchFilter()
     end
 end
 
+------------------- ROW PLAYER (CHECKBOX) -------------------
 local function createWebhookRow(player)
     local row = Instance.new("Frame")
     row.Name = player.Name
@@ -252,11 +243,13 @@ local function removeWebhookRow(player)
 end
 
 local function refreshWebhookList()
+    -- tambah row baru kalau ada Player baru
     for _, pl in ipairs(Players:GetPlayers()) do
         if not whRows[pl] then
             createWebhookRow(pl)
         end
     end
+    -- buang row kalau player sudah leave
     for pl, _ in pairs(whRows) do
         local stillHere = false
         for _, p in ipairs(Players:GetPlayers()) do
@@ -302,9 +295,33 @@ whSelectAll.MouseButton1Click:Connect(function()
     whSelectAll.Text = whSelectAllState and "Unselect All" or "Select All"
 end)
 
---------------------------------------------------
--- FUNGSI BACKPACK → DISCORD
---------------------------------------------------
+------------------- BACKPACK → KATEGORI -------------------
+local function extractFishWeightKg(name)
+    if not name then return nil end
+    local lower = string.lower(name)
+    local numStr = lower:match("(%d+%.?%d*)%s*kg") or lower:match("(%d+%.?%d*)")
+    if not numStr then return nil end
+    local w = tonumber(numStr)
+    if not w then return nil end
+    return w
+end
+
+local function getFishBaseName(rawName)
+    if not rawName or rawName == "" then
+        return "Unknown Fish"
+    end
+
+    local name = rawName
+    name = name:gsub("%b[]", "")
+    name = name:gsub("%b()", "")
+    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")
+    name = name:gsub("%s*%d+[%d%.]*$", "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then
+        name = rawName
+    end
+    return name
+end
 
 local function getBackpackCategoriesForWebhook(player)
     local rods, fish, others = {}, {}, {}
@@ -367,15 +384,18 @@ local function buildWebhookBlockForPlayer(pl, rods, fish, others)
     return table.concat(parts, "\n")
 end
 
+------------------- HTTP HELPER (EXECUTOR) -------------------
 local function getRequestFunction()
     local g = getgenv and getgenv() or _G
 
     local req =
         (syn and syn.request)
+        or (krnl and krnl.request)
+        or (fluxus and fluxus.request)
         or (g and (g.request or g.http_request))
-        or (http and (http.request or http_request))
-        or http_request
         or request
+        or http_request
+        or (http and (http.request or http_request))
 
     return req
 end
@@ -383,6 +403,7 @@ end
 local function postDiscord(payloadTable)
     local body = HttpService:JSONEncode(payloadTable)
 
+    -- 1) Coba HTTP executor dulu
     local req = getRequestFunction()
     if req then
         local ok, res = pcall(function()
@@ -394,11 +415,23 @@ local function postDiscord(payloadTable)
             })
         end)
 
-        if ok and res and (res.StatusCode == 204 or res.StatusCode == 200) then
-            return true
+        if ok and res then
+            local code = res.StatusCode or res.Status or res.StatusCode0
+            local successFlag = res.Success
+            if successFlag == true then
+                return true
+            end
+            if code == 204 or code == 200 then
+                return true
+            end
+            return false, "HTTP "..tostring(code)
+        elseif not ok then
+            warn("[AxaTab_Webhook] Executor request error:", res)
+            return false, "ExecErr: "..tostring(res)
         end
     end
 
+    -- 2) Fallback ke HttpService:PostAsync (kalau diizinkan executor)
     local ok, errMsg = pcall(function()
         return HttpService:PostAsync(
             WEBHOOK_URL,
@@ -409,7 +442,7 @@ local function postDiscord(payloadTable)
     end)
 
     if not ok then
-        warn("[Axa Backview] Gagal kirim webhook:", errMsg)
+        warn("[AxaTab_Webhook] HttpService PostAsync error:", errMsg)
     end
 
     return ok, errMsg
@@ -423,7 +456,7 @@ local function splitTextByLength(text, maxLen)
         if #current == 0 then
             current = line
         else
-            local candidate = current + "\n" + line
+            local candidate = current .. "\n" .. line
             if #candidate > maxLen then
                 table.insert(chunks, current)
                 current = line
@@ -440,6 +473,7 @@ local function splitTextByLength(text, maxLen)
     return chunks
 end
 
+------------------- KIRIM WEBHOOK BACKVIEW -------------------
 local function sendWebhookBackview()
     local blocks = {}
 
@@ -455,9 +489,10 @@ local function sendWebhookBackview()
 
     local fishNameCounts = {}
     local fishMaxWeight  = {}
+
     local favoriteFishEntries = {}
 
-    for pl, row in pairs(whRows) do
+    for pl, _ in pairs(whRows) do
         if whSelected[pl] then
             local rods, fish, others = getBackpackCategoriesForWebhook(pl)
 
@@ -496,6 +531,18 @@ local function sendWebhookBackview()
                         baseName = baseName,
                         weight   = w or 0
                     })
+                else
+                    -- optional: cek favorit by list nama
+                    for _, fav in ipairs(FAVORITE_FISH_NAMES) do
+                        if lowerFishName:find(fav, 1, true) then
+                            table.insert(favoriteFishEntries, {
+                                rawName  = fishName,
+                                baseName = baseName,
+                                weight   = w or 0
+                            })
+                            break
+                        end
+                    end
                 end
             end
 
@@ -565,11 +612,13 @@ local function sendWebhookBackview()
         for i, entry in ipairs(favoriteFishEntries) do
             if entry.weight and entry.weight > 0 then
                 table.insert(summaryLines, string.format(
-                    "%d. %s (%.1f Kg) (Favorite)", i, entry.baseName, entry.weight
+                    "%d. %s (%.1f Kg) (Favorite)",
+                    i, entry.baseName, entry.weight
                 ))
             else
                 table.insert(summaryLines, string.format(
-                    "%d. %s (Favorite)", i, entry.baseName
+                    "%d. %s (Favorite)",
+                    i, entry.baseName
                 ))
             end
         end
@@ -616,7 +665,7 @@ local function sendWebhookBackview()
         end
 
         local payload = {
-            username   = "Axa Backview",
+            username   = BOT_NAME,
             avatar_url = BOT_AVATAR_URL,
             embeds = {{
                 title       = title,
@@ -629,14 +678,17 @@ local function sendWebhookBackview()
         if not ok then
             allOk    = false
             firstErr = firstErr or err
+            warn("[AxaTab_Webhook] Gagal kirim part "..tostring(partIndex)..": "..tostring(err))
         end
     end
 
+    -- Part 1..N: detail Backpack
     for _, desc in ipairs(baseChunks) do
         sendOnePart(desc, false)
         task.wait(0.15)
     end
 
+    -- Part terakhir: Ringkasan + Ikan Favorite
     for _, desc in ipairs(summaryChunks) do
         sendOnePart(desc, true)
         task.wait(0.15)
@@ -646,26 +698,24 @@ local function sendWebhookBackview()
         if totalParts == 1 then
             setWebhookStatus("Terkirim ✅")
         else
-            setWebhookStatus("Terkirim " .. totalParts .. " Part ✅")
+            setWebhookStatus("Terkirim "..totalParts.." Part ✅")
         end
     else
-        setWebhookStatus("Sebagian error: " .. tostring(firstErr))
+        setWebhookStatus("Sebagian error: "..tostring(firstErr))
     end
 end
 
+------------------- BIND TOMBOL SEND -------------------
 whSendBtn.MouseButton1Click:Connect(function()
     whSendBtn.Text = "Sending..."
     setWebhookStatus("Mengirim ke Discord...")
     task.spawn(function()
         sendWebhookBackview()
-        -- auto refresh BAG VIEW + Webhook list setelah kirim
-        if _G.AxaHub_BagView_Refresh then
-            pcall(_G.AxaHub_BagView_Refresh)
-        end
-        refreshWebhookList()
-        task.wait(0.4)
+        task.wait(0.5)
         if whSendBtn then
             whSendBtn.Text = "Send to Discord"
         end
     end)
 end)
+
+-- Selesai: AxaTab_Webhook
