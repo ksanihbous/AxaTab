@@ -1,6 +1,6 @@
 --==========================================================
 --  AxaTab_Util_JumpRunKompas.lua
---  Fokus: ShiftRun + Infinite Jump + Kompas HUD (Bottom/Right)
+--  Fokus: ShiftRun + Infinite Jump + Kompas HUD (Top/Bottom)
 --  Env dari core:
 --      TAB_FRAME = Frame konten tab Util (sudah dibuat di core AxaHub)
 --==========================================================
@@ -122,7 +122,7 @@ local function getCharPosition(char: Model?)
 end
 
 ------------------------------------------------------
--- SHIFT RUN (persis mesin referensi kamu)
+-- SHIFT RUN (mengikuti mesin referensi kamu)
 ------------------------------------------------------
 local SR_AnimationID = 10862419793
 local SR_RunningSpeed = 40
@@ -181,10 +181,20 @@ local function SR_bindShiftAction()
     pcall(function() ContextActionService:UnbindAction(SR_ACTION_NAME) end)
     ContextActionService:BindAction(SR_ACTION_NAME, function(BindName, InputState)
         if BindName ~= SR_ACTION_NAME then return end
-        if InputState == Enum.UserInputState.Begin then SR_Running = true
-        elseif InputState == Enum.UserInputState.End then SR_Running = false end
-        if not SR_sprintEnabled then SR_applyWalk(); return end
-        if SR_Running then SR_applyRun() else SR_applyWalk() end
+        if InputState == Enum.UserInputState.Begin then
+            SR_Running = true
+        elseif InputState == Enum.UserInputState.End then
+            SR_Running = false
+        end
+        if not SR_sprintEnabled then
+            SR_applyWalk()
+            return
+        end
+        if SR_Running then
+            SR_applyRun()
+        else
+            SR_applyWalk()
+        end
     end, true, keyEnum)
 end
 
@@ -227,12 +237,18 @@ local function SR_attachCharacter(char)
     SR_Humanoid.WalkSpeed = SR_NormalSpeed
     SR_Humanoid.Running:Connect(function(Speed)
         if not SR_sprintEnabled then SR_applyWalk(); return end
-        if Speed >= 10 and SR_Running and SR_RAnimation and not SR_RAnimation.IsPlaying then SR_applyRun()
-        elseif Speed >= 10 and (not SR_Running) and SR_RAnimation and SR_RAnimation.IsPlaying then SR_applyWalk()
-        elseif Speed < 10 and SR_RAnimation and SR_RAnimation.IsPlaying then SR_applyWalk() end
+        if Speed >= 10 and SR_Running and SR_RAnimation and not SR_RAnimation.IsPlaying then
+            SR_applyRun()
+        elseif Speed >= 10 and (not SR_Running) and SR_RAnimation and SR_RAnimation.IsPlaying then
+            SR_applyWalk()
+        elseif Speed < 10 and SR_RAnimation and SR_RAnimation.IsPlaying then
+            SR_applyWalk()
+        end
     end)
     SR_Humanoid.Changed:Connect(function()
-        if SR_Humanoid.Jump and SR_RAnimation and SR_RAnimation.IsPlaying then pcall(function() SR_RAnimation:Stop() end) end
+        if SR_Humanoid.Jump and SR_RAnimation and SR_RAnimation.IsPlaying then
+            pcall(function() SR_RAnimation:Stop() end)
+        end
     end)
     SR_bindShiftAction()
     SR_startHeartbeatEnforcement()
@@ -265,7 +281,9 @@ local IJ_AirTimer  = 0
 local function IJ_isWhitelisted(p: Player): boolean
     local wl = IJ_Settings.WhiteList
     if wl and #wl > 0 then
-        for _, id in ipairs(wl) do if id == p.UserId then return true end end
+        for _, id in ipairs(wl) do
+            if id == p.UserId then return true end
+        end
         return false
     end
     return true
@@ -278,20 +296,35 @@ local function IJ_spawnAirStepVFX(pos: Vector3)
     if JumpPlatformTemplate then
         local obj = JumpPlatformTemplate:Clone()
         obj.Name = "DJ_Pivot"; obj.Parent = workspace
+
         if obj:IsA("BasePart") then
-            obj.Anchored = true; obj.CanCollide = false; obj.CFrame = CFrame.new(pos)
+            obj.Anchored = true
+            obj.CanCollide = false
+            obj.CFrame = CFrame.new(pos)
         else
-            if obj.PrimaryPart then obj:SetPrimaryPartCFrame(CFrame.new(pos)) else obj:PivotTo(CFrame.new(pos)) end
+            if obj.PrimaryPart then
+                obj:SetPrimaryPartCFrame(CFrame.new(pos))
+            else
+                obj:PivotTo(CFrame.new(pos))
+            end
             for _, d in ipairs(obj:GetDescendants()) do
-                if d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false end
+                if d:IsA("BasePart") then
+                    d.Anchored = true
+                    d.CanCollide = false
+                end
             end
         end
+
         Debris:AddItem(obj, IJ_Settings.AirStepLife)
     else
         local p = Instance.new("Part")
-        p.Name = "AirStep"; p.Anchored = true; p.CanCollide = false
-        p.Size = IJ_Settings.AirStepSize; p.Material = IJ_Settings.AirStepMaterial
-        p.Color = Color3.new(1,1,1); p.Transparency = IJ_Settings.AirStepTransparency
+        p.Name = "AirStep"
+        p.Anchored = true
+        p.CanCollide = false
+        p.Size = IJ_Settings.AirStepSize
+        p.Material = IJ_Settings.AirStepMaterial
+        p.Color = Color3.new(1, 1, 1)
+        p.Transparency = IJ_Settings.AirStepTransparency
         p.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad((tick()*180)%360), 0)
         p.Parent = workspace
         Debris:AddItem(p, IJ_Settings.AirStepLife)
@@ -301,13 +334,16 @@ end
 local function IJ_bindCharacter(char: Model)
     IJ_Humanoid = char:WaitForChild("Humanoid") :: Humanoid
     IJ_Root     = char:WaitForChild("HumanoidRootPart") :: BasePart
-    IJ_JumpsDone = 0; IJ_Grounded = false
+    IJ_JumpsDone = 0
+    IJ_Grounded  = false
+
     IJ_Humanoid.StateChanged:Connect(function(_, newState)
         if newState == Enum.HumanoidStateType.Landed
         or newState == Enum.HumanoidStateType.Running
         or newState == Enum.HumanoidStateType.RunningNoPhysics
         or newState == Enum.HumanoidStateType.Swimming then
-            IJ_JumpsDone = 0; IJ_Grounded = true
+            IJ_JumpsDone = 0
+            IJ_Grounded  = true
         elseif newState == Enum.HumanoidStateType.Freefall then
             IJ_Grounded = false
         end
@@ -321,7 +357,9 @@ UserInputService.JumpRequest:Connect(function()
     if not IJ_Enabled then return end
     if not IJ_Humanoid or IJ_Humanoid.Health <= 0 then return end
     if not IJ_isWhitelisted(LocalPlayer) then return end
+
     if IJ_Grounded then return end
+
     if IJ_JumpsDone < (IJ_Settings.ExtraJumps or 0) then
         IJ_JumpsDone += 1
         local v = IJ_Root.Velocity
@@ -335,22 +373,23 @@ end)
 RunService.Heartbeat:Connect(function(dt)
     if IJ_Humanoid and IJ_Humanoid:GetState() == Enum.HumanoidStateType.Freefall then
         IJ_AirTimer += dt
-        if IJ_AirTimer > 3 then IJ_JumpsDone = math.min(IJ_JumpsDone, IJ_Settings.ExtraJumps or 0) end
+        if IJ_AirTimer > 3 then
+            IJ_JumpsDone = math.min(IJ_JumpsDone, IJ_Settings.ExtraJumps or 0)
+        end
     else
         IJ_AirTimer = 0
     end
 end)
 
 ------------------------------------------------------
--- KOMPAS HUD (terintegrasi, bisa Bottom / Right)
+-- KOMPAS HUD (Top / Bottom only, DEFAULT: TOP)
 ------------------------------------------------------
 local Compass = {}
 do
-    -- Konfigurasi default
     local WIDTH            = 480
     local HEIGHT           = 44
+    local MARGIN_TOP       = 16
     local MARGIN_BOTTOM    = 16
-    local MARGIN_RIGHT     = 16
     local BG_TRANSP        = 0.35
     local PIXELS_PER_DEG   = 2
     local TICK_EVERY       = 10
@@ -358,15 +397,17 @@ do
     local TICK_H_MID       = 12
     local TICK_H_MAX       = 18
 
-    -- State UI
     local gui, container, headingLabel, centerArrow, tapeHolder, tape
     local SEG_W = 360 * PIXELS_PER_DEG
     local rsConn
-    local positionMode = "bottom"  -- "bottom" | "right"
+    local positionMode = "top"  -- DEFAULT: TOP
     local enabled = false
 
-    -- Label arah (Indonesia)
-    local FULL_DIRS = { "Utara","Timur Laut","Timur","Tenggara","Selatan","Barat Daya","Barat","Barat Laut" }
+    local FULL_DIRS = {
+        "Utara","Timur Laut","Timur","Tenggara",
+        "Selatan","Barat Daya","Barat","Barat Laut"
+    }
+
     local function yawDegFromLook(v: Vector3)
         local deg = math.deg(math.atan2(v.X, v.Z))
         return (deg % 360 + 360) % 360
@@ -399,14 +440,15 @@ do
 
     local function labelForDeg(degInt)
         local d = (degInt % 360 + 360) % 360
-        if d == 0 then return "U"
+        if d == 0   then return "U"
         elseif d == 45  then return "TL"
         elseif d == 90  then return "T"
         elseif d == 135 then return "TG"
         elseif d == 180 then return "S"
         elseif d == 225 then return "BD"
         elseif d == 270 then return "B"
-        elseif d == 315 then return "BL" end
+        elseif d == 315 then return "BL"
+        end
         return nil
     end
 
@@ -437,32 +479,32 @@ do
     end
 
     local function setPositionMode(mode)
-        positionMode = (mode == "right") and "right" or "bottom"
+        positionMode = (mode == "top") and "top" or "bottom"
         if not container then return end
 
-        if positionMode == "bottom" then
+        if positionMode == "top" then
+            container.AnchorPoint = Vector2.new(0.5, 0)
+            container.Position    = UDim2.new(0.5, 0, 0, MARGIN_TOP)
+        else
             container.AnchorPoint = Vector2.new(0.5, 1)
             container.Position    = UDim2.new(0.5, 0, 1, -MARGIN_BOTTOM)
-            container.Size        = UDim2.fromOffset(WIDTH, HEIGHT)
-            centerArrow.Rotation  = 0
-            centerArrow.Position  = UDim2.new(0.5, 0, 1, -4)
-        else
-            -- Samping kanan (vertikal semu tetap horizontal—lebih praktis)
-            container.AnchorPoint = Vector2.new(1, 0.5)
-            container.Position    = UDim2.new(1, -MARGIN_RIGHT, 0.5, 0)
-            container.Size        = UDim2.fromOffset(WIDTH, HEIGHT)
-            centerArrow.Rotation  = 90
-            centerArrow.Position  = UDim2.new(1, -12, 0.5, 0)
         end
+
+        container.Size       = UDim2.fromOffset(WIDTH, HEIGHT)
+        centerArrow.Rotation = 0
+        centerArrow.AnchorPoint = Vector2.new(0.5, 1)
+        centerArrow.Position = UDim2.new(0.5, 0, 1, -4)
     end
 
     local function updateTape()
         if not camera then return end
         local look = camera.CFrame.LookVector
         local deg  = yawDegFromLook(look)
+
         local centerX = math.floor(container.AbsoluteSize.X / 2 + 0.5)
         local desired = centerX - (SEG_W + deg * PIXELS_PER_DEG)
         tape.Position = UDim2.fromOffset(desired, 0)
+
         local idx8 = math.floor((deg + 22.5) / 45) % 8 + 1
         headingLabel.Text = ("Arah: %s (%.0f°)"):format(FULL_DIRS[idx8], deg)
     end
@@ -478,7 +520,6 @@ do
         destroy()
         enabled = true
 
-        -- pastikan tidak dobel dari skrip lama
         local pg = LocalPlayer:WaitForChild("PlayerGui")
         local old1 = pg:FindFirstChild("CenterCompassHUD")
         if old1 then old1:Destroy() end
@@ -521,7 +562,6 @@ do
         centerArrow = Instance.new("TextLabel")
         centerArrow.BackgroundTransparency = 1
         centerArrow.Size = UDim2.fromOffset(20, 20)
-        centerArrow.AnchorPoint = Vector2.new(0.5, 1)
         centerArrow.Font = Enum.Font.GothamBold
         centerArrow.TextSize = 16
         centerArrow.TextColor3 = Color3.fromRGB(255, 90, 90)
@@ -551,14 +591,17 @@ do
         buildSegment(tape, SEG_W)
         buildSegment(tape, SEG_W * 2)
 
-        setPositionMode(positionMode) -- posisikan sesuai state
+        -- DEFAULT POSISI: TOP
+        setPositionMode(positionMode)
 
         rsConn = RunService.RenderStepped:Connect(function()
             if enabled then updateTape() end
         end)
+
         task.defer(function()
             for _ = 1, 5 do
-                updateTape(); task.wait(0.05)
+                updateTape()
+                task.wait(0.05)
             end
         end)
     end
@@ -571,7 +614,7 @@ do
         end
     end
     Compass.SetPositionMode = function(mode)
-        positionMode = (mode == "right") and "right" or "bottom"
+        positionMode = (mode == "top") and "top" or "bottom"
         if gui and container then setPositionMode(positionMode) end
     end
     Compass.GetPositionMode = function() return positionMode end
@@ -581,7 +624,6 @@ end
 -- UI TAB: Layout + Toggle Connect
 ------------------------------------------------------
 do
-    -- header
     local header = Instance.new("TextLabel")
     header.Name = "UtilHeader"
     header.Size = UDim2.new(1, -10, 0, 22)
@@ -605,7 +647,7 @@ do
     sub.TextXAlignment = Enum.TextXAlignment.Left
     sub.TextYAlignment = Enum.TextYAlignment.Top
     sub.TextColor3 = Color3.fromRGB(90, 90, 120)
-    sub.Text = "ShiftRun: tahan LeftShift (WalkSpeed 40 + anim + FOV 80).  Infinite Jump: +5 lompatan udara.\nKompas: pita derajat, label U/T/S/B (Bahasa Indonesia) dengan mode posisi Bawah/Samping."
+    sub.Text = "ShiftRun: tahan LeftShift (WalkSpeed 40 + anim + FOV 80).  Infinite Jump: +5 lompatan udara.\nKompas: pita derajat U/T/S/B (ID) dengan posisi Atas/Bawah."
     sub.Parent = TAB_FRAME
 
     local listHolder = Instance.new("Frame")
@@ -664,7 +706,7 @@ do
         listHolder,
         "3_CompassHUD",
         "Kompas HUD (pita derajat & heading)",
-        true -- default aktif, biar langsung terasa
+        true -- default aktif
     )
     rowCompass.OnChanged(function(state)
         Compass.SetVisible(state)
@@ -676,10 +718,9 @@ do
             })
         end)
     end)
-    -- Inisialisasi kompas ke state awal
     Compass.SetVisible(rowCompass.Get())
 
-    -- Baris kecil untuk posisi kompas: Bawah / Samping
+    -- Posisi Kompas: Atas / Bawah
     local posRow = Instance.new("Frame")
     posRow.Name = "3b_CompassPos"
     posRow.Size = UDim2.new(1, 0, 0, 30)
@@ -701,32 +742,45 @@ do
         btn.TextColor3       = active and Color3.fromRGB(20, 30, 50)   or Color3.fromRGB(50, 60, 90)
     end
 
+    local btnTop = Instance.new("TextButton")
+    btnTop.Size = UDim2.new(0, 100, 0, 26)
+    btnTop.Position = UDim2.new(0, 150, 0, 2)
+    btnTop.Font = Enum.Font.GothamSemibold
+    btnTop.TextSize = 13
+    btnTop.Text = "Atas"
+    btnTop.Parent = posRow
+    Instance.new("UICorner", btnTop).CornerRadius = UDim.new(0, 7)
+
     local btnBottom = Instance.new("TextButton")
     btnBottom.Size = UDim2.new(0, 100, 0, 26)
-    btnBottom.Position = UDim2.new(0, 150, 0, 2)
+    btnBottom.Position = UDim2.new(0, 256, 0, 2)
     btnBottom.Font = Enum.Font.GothamSemibold
     btnBottom.TextSize = 13
     btnBottom.Text = "Bawah"
     btnBottom.Parent = posRow
     Instance.new("UICorner", btnBottom).CornerRadius = UDim.new(0, 7)
 
-    local btnRight = Instance.new("TextButton")
-    btnRight.Size = UDim2.new(0, 100, 0, 26)
-    btnRight.Position = UDim2.new(0, 256, 0, 2)
-    btnRight.Font = Enum.Font.GothamSemibold
-    btnRight.TextSize = 13
-    btnRight.Text = "Samping"
-    btnRight.Parent = posRow
-    Instance.new("UICorner", btnRight).CornerRadius = UDim.new(0, 7)
+    local currentPos = Compass.GetPositionMode() -- "top"/"bottom" (DEFAULT: "top")
+    styleBtn(btnTop,    currentPos == "top")
+    styleBtn(btnBottom, currentPos == "bottom")
 
-    -- sinkron awal
-    styleBtn(btnBottom, Compass.GetPositionMode() == "bottom")
-    styleBtn(btnRight, Compass.GetPositionMode() == "right")
+    btnTop.MouseButton1Click:Connect(function()
+        Compass.SetPositionMode("top")
+        styleBtn(btnTop, true)
+        styleBtn(btnBottom, false)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Kompas",
+                Text  = "Posisi: Atas",
+                Duration = 2
+            })
+        end)
+    end)
 
     btnBottom.MouseButton1Click:Connect(function()
         Compass.SetPositionMode("bottom")
+        styleBtn(btnTop, false)
         styleBtn(btnBottom, true)
-        styleBtn(btnRight, false)
         pcall(function()
             StarterGui:SetCore("SendNotification", {
                 Title = "Kompas",
@@ -735,19 +789,6 @@ do
             })
         end)
     end)
-
-    btnRight.MouseButton1Click:Connect(function()
-        Compass.SetPositionMode("right")
-        styleBtn(btnBottom, false)
-        styleBtn(btnRight, true)
-        pcall(function()
-            StarterGui:SetCore("SendNotification", {
-                Title = "Kompas",
-                Text  = "Posisi: Samping Kanan",
-                Duration = 2
-            })
-        end)
-    end)
 end
 
--- Selesai: tab util kini memuat ShiftRun, Infinite Jump, dan Kompas (HUD)
+-- Tab util selesai: ShiftRun + Infinite Jump + Kompas (default di atas, bisa pindah ke bawah lewat UI).
