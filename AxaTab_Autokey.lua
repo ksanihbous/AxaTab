@@ -102,11 +102,16 @@ akKeyLabel.TextXAlignment = Enum.TextXAlignment.Left
 akKeyLabel.Text = "Key saat ini: (diset di script)"
 akKeyLabel.Parent = autokeyTabFrame
 
-local akList = Instance.new("Frame")
+-- LIST: diganti jadi ScrollingFrame biar nggak keluar area TAB
+local akList = Instance.new("ScrollingFrame")
 akList.Name = "MenuList"
 akList.Position = UDim2.new(0, 5, 0, 84)
-akList.Size = UDim2.new(1, -10, 1, -92)
+akList.Size = UDim2.new(1, -10, 1, -92) -- tetap sama, tapi sekarang bisa scroll
 akList.BackgroundTransparency = 1
+akList.BorderSizePixel = 0
+akList.ScrollBarThickness = 4
+akList.ScrollingDirection = Enum.ScrollingDirection.Y
+akList.CanvasSize = UDim2.new(0, 0, 0, 0)
 akList.Parent = autokeyTabFrame
 
 local akLayout = Instance.new("UIListLayout")
@@ -114,6 +119,12 @@ akLayout.FillDirection = Enum.FillDirection.Vertical
 akLayout.SortOrder = Enum.SortOrder.LayoutOrder
 akLayout.Padding = UDim.new(0, 4)
 akLayout.Parent = akList
+
+-- Auto sesuaikan CanvasSize agar scrollbar muncul kalau kepanjangan
+akLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    local size = akLayout.AbsoluteContentSize
+    akList.CanvasSize = UDim2.new(0, 0, 0, size.Y + 4)
+end)
 
 --------------------------------------------------
 --  CONFIG: KEY + ENTRIES SCRIPT
@@ -416,6 +427,7 @@ local function runEntry(entry, buttonInstance)
         return
     end
 
+    -- Setelah script jalan, tunggu sebentar lalu hunting ModernKeyUI
     task.spawn(function()
         task.wait(2) -- kalau mau diubah ke 10–15 detik tinggal ganti di sini
         autoKeyAndSubmit()
