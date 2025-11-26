@@ -122,9 +122,9 @@ local function getCharPosition(char: Model?)
 end
 
 ------------------------------------------------------
--- SHIFT RUN (fixed behaviour)
+-- SHIFT RUN (mengikuti mesin referensi kamu)
 ------------------------------------------------------
-local SR_AnimationID  = 10862419793
+local SR_AnimationID = 10862419793
 local SR_RunningSpeed = 40
 local SR_NormalSpeed  = 20
 local SR_RunFOV       = 80
@@ -132,8 +132,8 @@ local SR_NormalFOV    = 70
 local SR_KeyString    = "LeftShift"
 local SR_ACTION_NAME  = "RunBind"
 
-local SR_sprintEnabled = false -- diatur dari toggle UI
-local SR_Running       = false -- apakah key shift lagi ditekan
+local SR_sprintEnabled = false
+local SR_Running       = false
 local SR_Humanoid      = nil
 local SR_RAnimation    = nil
 local SR_TweenRun      = nil
@@ -141,138 +141,121 @@ local SR_TweenWalk     = nil
 local SR_HeartbeatConn = nil
 
 local function SR_ensureTweens()
-    local inInfo  = TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-    local outInfo = TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+    local inInfo  = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+    local outInfo = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
     SR_TweenRun  = TweenService:Create(camera, inInfo,  { FieldOfView = SR_RunFOV })
     SR_TweenWalk = TweenService:Create(camera, outInfo, { FieldOfView = SR_NormalFOV })
 end
 
 local function SR_applyWalk()
-    if SR_Humanoid then
-        SR_Humanoid.WalkSpeed = SR_NormalSpeed
-    end
-    if SR_RAnimation and SR_RAnimation.IsPlaying then
-        pcall(function() SR_RAnimation:Stop() end)
-    end
-    if SR_TweenWalk then
-        SR_TweenWalk:Play()
-    else
-        camera.FieldOfView = SR_NormalFOV
-    end
+    if SR_Humanoid then SR_Humanoid.WalkSpeed = SR_NormalSpeed end
+    if SR_RAnimation and SR_RAnimation.IsPlaying then pcall(function() SR_RAnimation:Stop() end) end
+    if SR_TweenWalk then SR_TweenWalk:Play() else camera.FieldOfView = SR_NormalFOV end
 end
 
 local function SR_applyRun()
-    if SR_Humanoid then
-        SR_Humanoid.WalkSpeed = SR_RunningSpeed
-    end
-    if SR_RAnimation and not SR_RAnimation.IsPlaying then
-        pcall(function() SR_RAnimation:Play() end)
-    end
-    if SR_TweenRun then
-        SR_TweenRun:Play()
-    else
-        camera.FieldOfView = SR_RunFOV
-    end
-end
-
--- pusat state: cek kondisi dan pilih jalan / lari
-local function SR_updateState()
-    if not SR_Humanoid or SR_Humanoid.Health <= 0 then
-        return
-    end
-
-    local moving = SR_Humanoid.MoveDirection.Magnitude > 0.01
-    local shouldRun = SR_sprintEnabled and SR_Running and moving
-
-    if shouldRun then
-        SR_applyRun()
-    else
-        SR_applyWalk()
-    end
+    if SR_Humanoid then SR_Humanoid.WalkSpeed = SR_RunningSpeed end
+    if SR_RAnimation and not SR_RAnimation.IsPlaying then pcall(function() SR_RAnimation:Play() end) end
+    if SR_TweenRun then SR_TweenRun:Play() else camera.FieldOfView = SR_RunFOV end
 end
 
 local function SR_setSprintEnabled(newVal)
     SR_sprintEnabled = newVal and true or false
+    if not SR_Humanoid then return end
     if not SR_sprintEnabled then
-        -- kalau dimatikan dari UI, paksa balik normal
         SR_Running = false
+        SR_applyWalk()
+    else
+        local keyEnum = Enum.KeyCode[SR_KeyString] or Enum.KeyCode.LeftShift
+        local holding = UserInputService:IsKeyDown(keyEnum)
+        if holding and SR_Humanoid.MoveDirection.Magnitude > 0 then
+            SR_Running = true; SR_applyRun()
+        else
+            SR_Running = false; SR_applyWalk()
+        end
     end
-    SR_updateState()
 end
 
 local function SR_bindShiftAction()
     local keyEnum = Enum.KeyCode[SR_KeyString] or Enum.KeyCode.LeftShift
-
-    pcall(function()
-        ContextActionService:UnbindAction(SR_ACTION_NAME)
-    end)
-
-    ContextActionService:BindAction(
-        SR_ACTION_NAME,
-        function(actionName, inputState)
-            if actionName ~= SR_ACTION_NAME then return end
-
-            if inputState == Enum.UserInputState.Begin then
-                SR_Running = true
-            elseif inputState == Enum.UserInputState.End then
-                SR_Running = false
-            end
-
-            SR_updateState()
-        end,
-        false,
-        keyEnum
-    )
+    pcall(function() ContextActionService:UnbindAction(SR_ACTION_NAME) end)
+    ContextActionService:BindAction(SR_ACTION_NAME, function(BindName, InputState)
+        if BindName ~= SR_ACTION_NAME then return end
+        if InputState == Enum.UserInputState.Begin then
+            SR_Running = true
+        elseif InputState == Enum.UserInputState.End then
+            SR_Running = false
+        end
+        if not SR_sprintEnabled then
+            SR_applyWalk()
+            return
+        end
+        if SR_Running then
+            SR_applyRun()
+        else
+            SR_applyWalk()
+        end
+    end, true, keyEnum)
 end
 
 local function SR_startHeartbeatEnforcement()
-    if SR_HeartbeatConn then
-        SR_HeartbeatConn:Disconnect()
-        SR_HeartbeatConn = nil
-    end
-
+    if SR_HeartbeatConn then SR_HeartbeatConn:Disconnect(); SR_HeartbeatConn = nil end
     SR_HeartbeatConn = RunService.Heartbeat:Connect(function()
-        -- enforce state (kalau ada script lain utak-atik WalkSpeed/FOV)
-        SR_updateState()
+        if not SR_Humanoid then return end
+        if not SR_sprintEnabled then
+            if SR_Humanoid.WalkSpeed ~= SR_NormalSpeed
+               or (SR_RAnimation and SR_RAnimation.IsPlaying)
+               or camera.FieldOfView ~= SR_NormalFOV then
+                SR_applyWalk()
+            end
+        else
+            if SR_Running then
+                if SR_Humanoid.WalkSpeed ~= SR_RunningSpeed
+                   or (SR_RAnimation and not SR_RAnimation.IsPlaying)
+                   or camera.FieldOfView ~= SR_RunFOV then
+                    SR_applyRun()
+                end
+            else
+                if SR_Humanoid.WalkSpeed ~= SR_NormalSpeed
+                   or (SR_RAnimation and SR_RAnimation.IsPlaying)
+                   or camera.FieldOfView ~= SR_NormalFOV then
+                    SR_applyWalk()
+                end
+            end
+        end
     end)
 end
 
 local function SR_attachCharacter(char)
     SR_Humanoid = char:WaitForChild("Humanoid", 5)
     if not SR_Humanoid then return end
-
-    local anim = Instance.new("Animation")
-    anim.AnimationId = "rbxassetid://" .. SR_AnimationID
-
-    local ok, track = pcall(function()
-        return SR_Humanoid:LoadAnimation(anim)
-    end)
-    if ok then
-        SR_RAnimation = track
-    end
-
+    local anim = Instance.new("Animation"); anim.AnimationId = "rbxassetid://" .. SR_AnimationID
+    local ok, track = pcall(function() return SR_Humanoid:LoadAnimation(anim) end)
+    if ok then SR_RAnimation = track end
     SR_ensureTweens()
     camera.FieldOfView    = SR_NormalFOV
     SR_Humanoid.WalkSpeed = SR_NormalSpeed
-
-    -- hentikan animasi saat lompat
-    SR_Humanoid.Changed:Connect(function(prop)
-        if prop == "Jump" and SR_Humanoid.Jump then
-            if SR_RAnimation and SR_RAnimation.IsPlaying then
-                pcall(function() SR_RAnimation:Stop() end)
-            end
+    SR_Humanoid.Running:Connect(function(Speed)
+        if not SR_sprintEnabled then SR_applyWalk(); return end
+        if Speed >= 10 and SR_Running and SR_RAnimation and not SR_RAnimation.IsPlaying then
+            SR_applyRun()
+        elseif Speed >= 10 and (not SR_Running) and SR_RAnimation and SR_RAnimation.IsPlaying then
+            SR_applyWalk()
+        elseif Speed < 10 and SR_RAnimation and SR_RAnimation.IsPlaying then
+            SR_applyWalk()
         end
     end)
-
+    SR_Humanoid.Changed:Connect(function()
+        if SR_Humanoid.Jump and SR_RAnimation and SR_RAnimation.IsPlaying then
+            pcall(function() SR_RAnimation:Stop() end)
+        end
+    end)
     SR_bindShiftAction()
     SR_startHeartbeatEnforcement()
-    -- re-apply mode sprint kalau toggle sudah ON sebelum respawn
-    SR_updateState()
+    SR_setSprintEnabled(SR_sprintEnabled)
 end
 
-if LocalPlayer.Character then
-    SR_attachCharacter(LocalPlayer.Character)
-end
+if LocalPlayer.Character then SR_attachCharacter(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(SR_attachCharacter)
 
 ------------------------------------------------------
@@ -688,6 +671,7 @@ do
         false
     )
     rowShift.OnChanged(function(state)
+        SR_sprintEnabled = state
         SR_setSprintEnabled(state)
         pcall(function()
             StarterGui:SetCore("SendNotification", {
@@ -804,35 +788,6 @@ do
                 Duration = 2
             })
         end)
-    end)
-end
-
---==========================================================
---  REGISTER CLEANUP UNTUK TAB "Jump & Run"
---  (dipanggil CORE saat panel di-close)
---==========================================================
-_G.AxaHub = _G.AxaHub or {}
-_G.AxaHub.TabCleanup = _G.AxaHub.TabCleanup or {}
-
-_G.AxaHub.TabCleanup[TAB_ID or "jumprun"] = function()
-    -- Matikan ShiftRun
-    pcall(function()
-        SR_setSprintEnabled(false)
-    end)
-
-    -- Matikan Infinite Jump
-    IJ_Enabled   = false
-    IJ_JumpsDone = 0
-
-    -- Hancurkan Kompas HUD
-    pcall(function()
-        Compass.SetVisible(false)
-        Compass.Destroy()
-    end)
-
-    -- Unbind action ShiftRun
-    pcall(function()
-        ContextActionService:UnbindAction(SR_ACTION_NAME)
     end)
 end
 
