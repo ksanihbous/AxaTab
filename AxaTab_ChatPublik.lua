@@ -1,14 +1,6 @@
 --==========================================================
 --  AxaTab_ChatPublik.lua
 --  Dipanggil via AxaHub CORE (loadstring + env TAB_FRAME)
---  Fitur:
---    - Relay Public Chat + System Info → Discord Webhook
---    - SPECIAL user (ID + friend koneksi) dengan warna & mention
---    - Filter Chat (All/System/Special/System Special/Chat Khusus)
---    - Master toggle "Chat Filter: ON/OFF"
---    - Subtitle Panel (1–3 pesan terakhir)
---    - History file: historychat.txt (multi-part upload)
---    - STT hook (_G + RemoteEvent + BindableEvent)
 --==========================================================
 
 ------------------- SERVICES -------------------
@@ -51,7 +43,9 @@ local FILTER_CHAT_KHUSUS        = false  -- system info khusus Mirethos/Kaelvorn
 local NEARBY_CAPTION_ONLY       = false  -- subtitle hanya player terdekat
 local NEARBY_MAX_DISTANCE       = 17     -- studs (≈ 5–6 meter)
 
--- Master switch untuk filter (bukan matiin relay, cuma matiin efek checkbox filter)
+-- Master switch untuk filter:
+--  - FALSE  → checkbox diabaikan + subtitle 3 baris dimatikan
+--  - TRUE   → checkbox berlaku + subtitle aktif
 local CHAT_FILTER_ENABLED       = true
 
 ------------------- CONFIG HISTORY FILE -------------------
@@ -471,11 +465,17 @@ local function updateSubtitleUI()
         label.Text = text
     end
 
-    frame.Visible = (#subtitleLines > 0)
+    -- Kalau Chat Filter OFF → paksa sembunyikan subtitle 3 baris
+    frame.Visible = CHAT_FILTER_ENABLED and (#subtitleLines > 0) or false
 end
 
 local function pushSubtitleLine(text)
     if not text or text == "" then return end
+    -- Kalau Chat Filter OFF → tidak nambah subtitle sama sekali
+    if not CHAT_FILTER_ENABLED then
+        return
+    end
+
     table.insert(subtitleLines, text)
     if #subtitleLines > 3 then
         table.remove(subtitleLines, 1)
@@ -485,6 +485,11 @@ end
 
 local function pushSubtitleMessage(channelName, displayName, authorName, messageText, isSystem, isSpecial, isPrivate, isKhusus, speakerPlayer)
     if not messageText or messageText == "" then return end
+
+    -- Subtitle full ikut master filter
+    if not CHAT_FILTER_ENABLED then
+        return
+    end
 
     if NEARBY_CAPTION_ONLY and speakerPlayer and speakerPlayer ~= LOCAL_PLAYER then
         local char   = speakerPlayer.Character
@@ -566,7 +571,9 @@ local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
         end
     end
 
-    -- Kalau master filter dimatikan → semua lewat (abaikan checkbox filter)
+    -- Kalau master filter dimatikan:
+    --  - subtitle sudah dimatiin di pushSubtitleMessage
+    --  - di sini, semua chat tetap dilepas ke Discord + history
     if not CHAT_FILTER_ENABLED then
         return true
     end
@@ -781,11 +788,10 @@ end
 local function createHeaderFilterUI()
     if not ROOT_FRAME then return end
 
-    -- Styling TAB agar senada gelap
+    -- Styling TAB
     ROOT_FRAME.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
     ROOT_FRAME.BackgroundTransparency = 0
 
-    -- Bersihin header lama kalau ada
     local oldHeader = ROOT_FRAME:FindFirstChild("ChatPublikHeader")
     if oldHeader then
         oldHeader:Destroy()
@@ -810,7 +816,6 @@ local function createHeaderFilterUI()
     titleLabel.TextColor3 = Color3.fromRGB(235, 235, 245)
     titleLabel.Text = "CHAT PUBLIK  •  Chat Filter"
 
-    -- Master toggle
     local masterToggle
     local checkButtons = {}
 
@@ -837,6 +842,15 @@ local function createHeaderFilterUI()
                 btn.TextTransparency = 0.3
             end
         end
+
+        -- Sinkron dengan subtitle panel: OFF → sembunyi total
+        if subtitleFrame then
+            if CHAT_FILTER_ENABLED and #subtitleLines > 0 then
+                subtitleFrame.Visible = true
+            else
+                subtitleFrame.Visible = false
+            end
+        end
     end
 
     masterToggle = Instance.new("TextButton")
@@ -860,6 +874,20 @@ local function createHeaderFilterUI()
     masterToggle.MouseButton1Click:Connect(function()
         CHAT_FILTER_ENABLED = not CHAT_FILTER_ENABLED
         refreshMaster()
+        -- kalau OFF, kita juga kosongin teks di layar (opsional, tapi aman)
+        if not CHAT_FILTER_ENABLED then
+            subtitleLines = {}
+            if subtitleFrame then
+                for _, child in ipairs(subtitleFrame:GetChildren()) do
+                    if child:IsA("TextLabel") then
+                        child:Destroy()
+                    end
+                end
+                subtitleFrame.Visible = false
+            end
+        else
+            updateSubtitleUI()
+        end
     end)
 
     local descLabel = Instance.new("TextLabel")
@@ -872,7 +900,7 @@ local function createHeaderFilterUI()
     descLabel.TextSize = 12
     descLabel.TextXAlignment = Enum.TextXAlignment.Left
     descLabel.TextColor3 = Color3.fromRGB(180, 180, 195)
-    descLabel.Text = "Webhook + History + Subtitle • Checkbox hanya aktif kalau Chat Filter: ON"
+    descLabel.Text = "Webhook + History • Checkbox & Subtitle aktif hanya saat Chat Filter: ON"
 
     local filterList = Instance.new("Frame")
     filterList.Name = "FilterList"
@@ -1021,12 +1049,13 @@ local function hookNewChat()
             end
         end
 
+        -- Subtitle: di dalam sudah cek CHAT_FILTER_ENABLED
+        pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
+
         if not shouldRelayChat(isSystem, player, isSpecialFlag, isKhusus) then
-            pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
             return
         end
 
-        pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
         sendDiscordChat(authorName, displayName, userId, text, channelName, isSystem, isSpecialFlag, isKhusus)
 
         local tsShort = getWITAClockString()
@@ -1057,12 +1086,12 @@ local function hookLegacyChat()
             local isSpecialFlag = isSpecialUser(p.UserId)
             local isKhusus = false
 
+            pushSubtitleMessage("LegacyChat", p.DisplayName, p.Name, msg, isSystem, isSpecialFlag, false, isKhusus, p)
+
             if not shouldRelayChat(false, p, isSpecialFlag, isKhusus) then
-                pushSubtitleMessage("LegacyChat", p.DisplayName, p.Name, msg, isSystem, isSpecialFlag, false, isKhusus, p)
                 return
             end
 
-            pushSubtitleMessage("LegacyChat", p.DisplayName, p.Name, msg, isSystem, isSpecialFlag, false, isKhusus, p)
             sendDiscordChat(p.Name, p.DisplayName, p.UserId, msg, "LegacyChat", isSystem, isSpecialFlag, isKhusus)
 
             local timeStr = getWITAClockString()
@@ -1172,7 +1201,7 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
 
     print(string.format("[Axa Chat Relay][STT] %s (%d) @ %s: %s", authorName, userId, channelName, transcribedText))
 
-    -- Subtitle selalu dicoba tampil
+    -- Subtitle (ikut Chat Filter master)
     pushSubtitleMessage(
         channelName,
         displayName,
@@ -1252,7 +1281,7 @@ local function setupSTTRemotes()
     end)
 end
 
--- Global function (override stub dari CORE)
+-- Global function (override stub dari loader awal)
 _G.AxaChatRelay_ReceiveSTT = relaySTTMessage
 
 -- Replay semua STT yang sudah ngantri sebelum fungsi siap
@@ -1288,7 +1317,7 @@ local function startChatRelay()
     print("[Axa Chat Relay] Aktif: relay chat → Discord webhook + history file + SPECIAL shiny ✨"
         .. " + avatar thumbnail 420x420 + per-user Special Mention (+ fallback Axa)"
         .. " + Chat Khusus Mirethos/Kaelvorn (pink)"
-        .. " + UI Filter Chat di header TAB + Master Chat Filter ON/OFF"
+        .. " + UI Filter Chat di header TAB + Master Chat Filter ON/OFF (subtitle ikut master)"
         .. " + Subtitle Panel (1–3 pesan terakhir)"
         .. " + STT hook (_G + RemoteEvent + BindableEvent).")
 end
