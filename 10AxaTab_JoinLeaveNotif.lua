@@ -1,9 +1,8 @@
 --==========================================================
 --  10AxaTab_JoinLeaveNotif.lua
---  Tab AxaHub: Join/Leave Notif + Log Pemain
+--  Tab AxaHub: Join/Leave Notif + Log Pemain + Profile
 --  Env dari core:
 --      TAB_FRAME (Frame konten tab)
---      Players, RunService, TweenService, StarterGui, dll (biasanya sudah di-pass)
 --==========================================================
 
 local frame        = TAB_FRAME
@@ -14,12 +13,18 @@ local TweenService = game:GetService("TweenService")
 local SoundService = game:GetService("SoundService")
 local StarterGui   = game:GetService("StarterGui")
 local TextService  = game:GetService("TextService")
-
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer  = Players.LocalPlayer
 local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
 
 ------------------------------------------------------
--- HELPER UI
+-- FORWARD DECLARATIONS
+------------------------------------------------------
+local openProfile   -- akan diisi di bawah
+local pushToast     -- toast kecil di atas
+
+------------------------------------------------------
+-- HELPER
 ------------------------------------------------------
 local function rounded(instance, radius)
     local c = Instance.new("UICorner")
@@ -42,7 +47,7 @@ local function gradient(instance, cTop, cBottom, rot)
     local g = Instance.new("UIGradient")
     g.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, cTop or Color3.fromRGB(245,247,255)),
-        ColorSequenceKeypoint.new(1, cBottom or Color3.fromRGB(233,238,252))
+        ColorSequenceKeypoint.new(1, cBottom or Color3.fromRGB(233,238,252)),
     })
     g.Rotation = rot or 90
     g.Parent = instance
@@ -51,7 +56,11 @@ end
 
 local function getAvatar(userId)
     local ok, content = pcall(function()
-        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+        return Players:GetUserThumbnailAsync(
+            userId,
+            Enum.ThumbnailType.HeadShot,
+            Enum.ThumbnailSize.Size48x48
+        )
     end)
     return ok and content or ""
 end
@@ -73,21 +82,20 @@ local function copyOrAnnounce(url)
     if okCopy then
         pcall(function()
             StarterGui:SetCore("SendNotification", {
-                Title = "Profil",
-                Text  = "Link profil tersalin.",
-                Duration = 2
+                Title    = "Profil",
+                Text     = "Link profil tersalin.",
+                Duration = 2,
             })
         end)
         return
     end
 
-    -- fallback: lempar ke chat
     pcall(function()
         StarterGui:SetCore("ChatMakeSystemMessage", {
-            Text = "[Profil] " .. url,
-            Color = Color3.fromRGB(30, 30, 40),
-            Font = Enum.Font.Gotham,
-            TextSize = 14
+            Text     = "[Profil] " .. url,
+            Color    = Color3.fromRGB(30, 30, 40),
+            Font     = Enum.Font.Gotham,
+            TextSize = 14,
         })
     end)
 end
@@ -95,6 +103,23 @@ end
 local function hhmm(ts)
     local t = os.date("*t", ts or os.time())
     return string.format("%02d:%02d", t.hour, t.min)
+end
+
+local function durHMS(sec)
+    sec = math.max(0, math.floor(sec or 0))
+    local h = math.floor(sec / 3600)
+    sec = sec % 3600
+    local m = math.floor(sec / 60)
+    sec = sec % 60
+    return string.format("%02d:%02d:%02d", h, m, sec)
+end
+
+local function splitYMD(days)
+    local years = math.floor(days / 365)
+    local rem   = days % 365
+    local months= math.floor(rem / 30)
+    local d     = rem % 30
+    return years, months, d
 end
 
 ------------------------------------------------------
@@ -125,11 +150,11 @@ sub.TextWrapped = true
 sub.TextXAlignment = Enum.TextXAlignment.Left
 sub.TextYAlignment = Enum.TextYAlignment.Top
 sub.TextColor3 = Color3.fromRGB(90, 90, 120)
-sub.Text = "Pantau teman yang masuk/keluar dan semua pemain di server. Klik baris untuk salin link profil."
+sub.Text = "Pantau teman yang masuk/keluar dan semua pemain di server. Klik baris untuk buka profil & salin link."
 sub.Parent = frame
 
 ------------------------------------------------------
--- TITLEBAR: judul + segmented control + tombol sound
+-- TITLEBAR (JOIN/LEAVE/PLAYER/PROFILE + SOUND + NOTIF)
 ------------------------------------------------------
 local titleBar = Instance.new("Frame")
 titleBar.Name = "JoinLeaveTitleBar"
@@ -141,7 +166,7 @@ titleBar.Parent = frame
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "Title"
 titleLabel.BackgroundTransparency = 1
-titleLabel.Size = UDim2.new(0.3, 0, 1, 0)
+titleLabel.Size = UDim2.new(0, 120, 1, 0)
 titleLabel.Position = UDim2.new(0, 0, 0, 0)
 titleLabel.Font = Enum.Font.GothamSemibold
 titleLabel.TextSize = 14
@@ -150,6 +175,7 @@ titleLabel.TextColor3 = Color3.fromRGB(40, 40, 70)
 titleLabel.Text = "Log Pemain"
 titleLabel.Parent = titleBar
 
+-- Tombol Sound (suara join/leave)
 local soundBtn = Instance.new("TextButton")
 soundBtn.Name = "SoundBtn"
 soundBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -167,23 +193,42 @@ soundBtn.Parent = titleBar
 rounded(soundBtn, 8)
 stroked(soundBtn, Color3.fromRGB(180, 190, 220), 1, 0.4)
 
-local SEG_ITEM_W, SEG_PAD = 80, 4
+-- Tombol NOTIF: ON/OFF (toast teman join/leave)
+local notifBtn = Instance.new("TextButton")
+notifBtn.Name = "NotifBtn"
+notifBtn.AnchorPoint = Vector2.new(1, 0.5)
+notifBtn.Position = UDim2.new(1, -4 - 32 - 4, 0.5, 0)
+notifBtn.Size = UDim2.new(0, 82, 0, 22)
+notifBtn.AutoButtonColor = false
+notifBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+notifBtn.BackgroundTransparency = 0.35
+notifBtn.BorderSizePixel = 0
+notifBtn.Font = Enum.Font.Gotham
+notifBtn.TextSize = 12
+notifBtn.TextColor3 = Color3.fromRGB(40, 40, 70)
+notifBtn.Text = "NOTIF: ON"
+notifBtn.Parent = titleBar
+rounded(notifBtn, 8)
+stroked(notifBtn, Color3.fromRGB(180, 190, 220), 1, 0.4)
 
+-- Segmented control Join / Leave / Player / Profile
 local segScroll = Instance.new("ScrollingFrame")
 segScroll.Name = "SegScroll"
-segScroll.AnchorPoint = Vector2.new(1, 0)
-segScroll.Position = UDim2.new(1, -40, 0, 0)
-segScroll.Size = UDim2.new(0.6, -40, 1, 0)
 segScroll.BackgroundTransparency = 1
 segScroll.BorderSizePixel = 0
 segScroll.ScrollBarThickness = 0
 segScroll.ScrollingDirection = Enum.ScrollingDirection.X
+-- area antara titleLabel dan tombol notif/sound
+local LEFT_OFFSET = 130
+local RIGHT_FIXED = 4 + 82 + 4 + 32 + 4
+segScroll.Position = UDim2.new(0, LEFT_OFFSET, 0, 0)
+segScroll.Size = UDim2.new(1, -LEFT_OFFSET - RIGHT_FIXED, 1, 0)
 segScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 segScroll.Parent = titleBar
 
 local segWrap = Instance.new("Frame")
 segWrap.Name = "SegWrap"
-segWrap.Size = UDim2.new(0, 240, 0, 24)
+segWrap.Size = UDim2.new(0, 260, 0, 24)
 segWrap.Position = UDim2.new(0, 0, 0, 2)
 segWrap.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 segWrap.BackgroundTransparency = 0.35
@@ -203,6 +248,8 @@ rounded(indicator, 9)
 stroked(indicator, Color3.fromRGB(10, 132, 255), 1, 0.35)
 gradient(indicator, Color3.fromRGB(255, 255, 255), Color3.fromRGB(230, 240, 255), 90)
 
+local SEG_ITEM_W, SEG_PAD = 80, 4
+
 local function makeSeg(text)
     local btn = Instance.new("TextButton")
     btn.Name = "Seg_" .. text
@@ -218,9 +265,29 @@ local function makeSeg(text)
     return btn
 end
 
-local segJoin  = makeSeg("Join")
-local segLeave = makeSeg("Leave")
-local segAll   = makeSeg("Player")
+local segJoin    = makeSeg("Join")
+local segLeave   = makeSeg("Leave")
+local segAll     = makeSeg("Player")
+local segProfile = makeSeg("Profile")
+
+local function layoutSegments()
+    local list = {segJoin, segLeave, segAll, segProfile}
+    local n = #list
+    local totalW = SEG_PAD * 2 + SEG_ITEM_W * n
+    segWrap.Size = UDim2.new(0, totalW, 0, 24)
+    segScroll.CanvasSize = UDim2.new(0, totalW, 0, 0)
+
+    indicator.Size = UDim2.new(0, SEG_ITEM_W - SEG_PAD * 2, 1, -SEG_PAD * 2)
+
+    for i, btn in ipairs(list) do
+        btn.Position = UDim2.new(0, SEG_PAD + (i - 1) * SEG_ITEM_W, 0, 0)
+    end
+end
+
+layoutSegments()
+segWrap:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+    segScroll.CanvasSize = UDim2.new(0, segWrap.AbsoluteSize.X, 0, 0)
+end)
 
 ------------------------------------------------------
 -- BODY PANEL
@@ -269,7 +336,7 @@ searchBox.ClearTextOnFocus = false
 searchBox.Font = Enum.Font.Gotham
 searchBox.TextSize = 14
 searchBox.TextColor3 = Color3.fromRGB(40, 40, 70)
-searchBox.PlaceholderText = "Cari displayname / username..."
+searchBox.PlaceholderText = "Search User/DisplayName"
 searchBox.PlaceholderColor3 = Color3.fromRGB(120, 125, 140)
 searchBox.TextXAlignment = Enum.TextXAlignment.Left
 searchBox.Parent = searchBg
@@ -307,18 +374,206 @@ local scrollAll   = newScroll("ScrollAll")
 
 local function applyListAreaLayout()
     local top = searchWrap.Position.Y.Offset + SEARCH_H + 6
+    local size = UDim2.new(1, -12, 1, -(top + 6))
+
     scrollJoin.Position  = UDim2.new(0, 6, 0, top)
     scrollLeave.Position = UDim2.new(0, 6, 0, top)
     scrollAll.Position   = UDim2.new(0, 6, 0, top)
 
-    local bottomMargin = 6
-    local size = UDim2.new(1, -12, 1, -(top + bottomMargin))
     scrollJoin.Size  = size
     scrollLeave.Size = size
     scrollAll.Size   = size
 end
 
 applyListAreaLayout()
+
+------------------------------------------------------
+-- PROFILE UI DALAM BODY
+------------------------------------------------------
+local ProfilePage      = Instance.new("Frame")
+local ProfileName      = Instance.new("TextLabel")
+local ProfileCopy      = Instance.new("TextButton")
+local ProfileRefresh   = Instance.new("TextButton")
+local ProfileScroll    = Instance.new("ScrollingFrame")
+local ProfileList      = Instance.new("Frame")
+local ProfileLayout    = Instance.new("UIListLayout")
+
+ProfilePage.Name = "ProfilePage"
+ProfilePage.Size = UDim2.new(1, -12, 1, -12)
+ProfilePage.Position = UDim2.new(0, 6, 0, 6)
+ProfilePage.BackgroundTransparency = 1
+ProfilePage.Visible = false
+ProfilePage.Parent = body
+
+local profileHeader = Instance.new("Frame")
+profileHeader.Name = "ProfileHeader"
+profileHeader.Size = UDim2.new(1, 0, 0, 32)
+profileHeader.BackgroundTransparency = 1
+profileHeader.Parent = ProfilePage
+
+ProfileName.Name = "ProfileTitle"
+ProfileName.BackgroundTransparency = 1
+ProfileName.Size = UDim2.new(1, -170, 1, 0)
+ProfileName.Position = UDim2.new(0, 0, 0, 0)
+ProfileName.Font = Enum.Font.GothamSemibold
+ProfileName.TextSize = 16
+ProfileName.TextColor3 = Color3.fromRGB(40, 40, 70)
+ProfileName.TextXAlignment = Enum.TextXAlignment.Left
+ProfileName.Text = ""
+ProfileName.Parent = profileHeader
+
+local function smallGlassButton(label)
+    local b = Instance.new("TextButton")
+    b.AutoButtonColor = false
+    b.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    b.BackgroundTransparency = 0.2
+    b.BorderSizePixel = 0
+    b.Size = UDim2.new(0, 36, 0, 24)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 14
+    b.TextColor3 = Color3.fromRGB(40, 40, 70)
+    b.Text = label
+    rounded(b, 8)
+    stroked(b, Color3.fromRGB(200, 210, 230), 1, 0.45)
+    return b
+end
+
+ProfileCopy = smallGlassButton("🔗")
+ProfileCopy.Name = "CopyLink"
+ProfileCopy.Position = UDim2.new(1, -40, 0.5, -12)
+ProfileCopy.Parent = profileHeader
+
+ProfileRefresh = smallGlassButton("↻")
+ProfileRefresh.Name = "Refresh"
+ProfileRefresh.Position = UDim2.new(1, -80, 0.5, -12)
+ProfileRefresh.Parent = profileHeader
+
+local infoRoot = Instance.new("Frame")
+infoRoot.Name = "InfoRoot"
+infoRoot.Size = UDim2.new(1, 0, 1, -40)
+infoRoot.Position = UDim2.new(0, 0, 0, 36)
+infoRoot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+infoRoot.BackgroundTransparency = 0.2
+infoRoot.BorderSizePixel = 0
+infoRoot.Parent = ProfilePage
+rounded(infoRoot, 10)
+gradient(infoRoot, Color3.fromRGB(255, 255, 255), Color3.fromRGB(238, 243, 255), 90)
+stroked(infoRoot, Color3.fromRGB(210, 215, 235), 1, 0.45)
+
+ProfileScroll = Instance.new("ScrollingFrame")
+ProfileScroll.Name = "ProfileScroll"
+ProfileScroll.BackgroundTransparency = 1
+ProfileScroll.BorderSizePixel = 0
+ProfileScroll.Size = UDim2.new(1, -12, 1, -12)
+ProfileScroll.Position = UDim2.new(0, 6, 0, 6)
+ProfileScroll.ScrollBarThickness = 6
+ProfileScroll.ScrollBarImageTransparency = 0.1
+ProfileScroll.ScrollBarImageColor3 = Color3.fromRGB(130, 138, 154)
+ProfileScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+ProfileScroll.Parent = infoRoot
+
+ProfileList = Instance.new("Frame")
+ProfileList.Name = "ProfileList"
+ProfileList.BackgroundTransparency = 1
+ProfileList.Size = UDim2.new(1, -8, 0, 0)
+ProfileList.Position = UDim2.new(0, 4, 0, 0)
+ProfileList.Parent = ProfileScroll
+
+ProfileLayout = Instance.new("UIListLayout")
+ProfileLayout.FillDirection = Enum.FillDirection.Vertical
+ProfileLayout.Padding = UDim.new(0, 6)
+ProfileLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ProfileLayout.Parent = ProfileList
+
+ProfileLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ProfileList.Size = UDim2.new(1, -8, 0, ProfileLayout.AbsoluteContentSize.Y)
+    ProfileScroll.CanvasSize = UDim2.new(0, 0, 0, ProfileLayout.AbsoluteContentSize.Y + 8)
+end)
+
+local function clearInfo()
+    for _, c in ipairs(ProfileList:GetChildren()) do
+        if c:IsA("GuiObject") then
+            c:Destroy()
+        end
+    end
+end
+
+local function makeField(labelTxt, valueTxt, opts)
+    opts = opts or {}
+    local row = Instance.new("Frame")
+    row.Name = "Row_" .. (labelTxt:gsub("%s+", ""))
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.BackgroundTransparency = 1
+    row.Parent = ProfileList
+
+    local L = Instance.new("TextLabel")
+    L.BackgroundTransparency = 1
+    L.Size = UDim2.new(0.35, 0, 1, 0)
+    L.Position = UDim2.new(0, 0, 0, 0)
+    L.Font = Enum.Font.Gotham
+    L.TextSize = 14
+    L.TextColor3 = Color3.fromRGB(40, 40, 70)
+    L.TextXAlignment = Enum.TextXAlignment.Left
+    L.Text = labelTxt
+    L.Parent = row
+
+    local V = Instance.new("TextLabel")
+    V.BackgroundTransparency = 1
+    V.Position = UDim2.new(0.35, 8, 0, 0)
+    V.Size = UDim2.new(1 - 0.35 - (opts.hasButtons and 0.22 or 0), -8, 1, 0)
+    V.Font = Enum.Font.GothamMedium
+    V.TextSize = 14
+    V.TextColor3 = Color3.fromRGB(40, 40, 70)
+    V.TextXAlignment = Enum.TextXAlignment.Left
+    V.TextTruncate = Enum.TextTruncate.AtEnd
+    V.Text = valueTxt
+    V.Parent = row
+
+    if opts.copyText then
+        local Btn = Instance.new("TextButton")
+        Btn.AutoButtonColor = false
+        Btn.Size = UDim2.new(0, 32, 0, 24)
+        Btn.Position = UDim2.new(1, -36, 0.5, -12)
+        Btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        Btn.BackgroundTransparency = 0.2
+        Btn.BorderSizePixel = 0
+        Btn.Font = Enum.Font.Gotham
+        Btn.TextSize = 14
+        Btn.TextColor3 = Color3.fromRGB(40, 40, 70)
+        Btn.Text = opts.icon or "📋"
+        Btn.Parent = row
+        rounded(Btn, 8)
+        stroked(Btn, Color3.fromRGB(200, 210, 230), 1, 0.5)
+
+        Btn.MouseButton1Click:Connect(function()
+            copyOrAnnounce(opts.copyText)
+        end)
+    end
+
+    return row, V
+end
+
+local function addBadgeRow(labelTxt, color3)
+    local row = Instance.new("Frame")
+    row.Name = "Row_Badge"
+    row.Size = UDim2.new(1, 0, 0, 28)
+    row.BackgroundTransparency = 1
+    row.Parent = ProfileList
+
+    local chip = Instance.new("TextLabel")
+    chip.Size = UDim2.new(0, 220, 0, 22)
+    chip.Position = UDim2.new(0, 0, 0.5, -11)
+    chip.BackgroundColor3 = color3 or Color3.fromRGB(220, 230, 255)
+    chip.BackgroundTransparency = 0.1
+    chip.BorderSizePixel = 0
+    chip.Font = Enum.Font.GothamMedium
+    chip.TextSize = 13
+    chip.TextColor3 = Color3.fromRGB(40, 40, 70)
+    chip.Text = labelTxt
+    chip.Parent = row
+    rounded(chip, 11)
+    stroked(chip, Color3.fromRGB(200, 210, 230), 1, 0.5)
+end
 
 ------------------------------------------------------
 -- FILTER (SEARCH)
@@ -355,7 +610,7 @@ end
 searchBox:GetPropertyChangedSignal("Text"):Connect(applyGlobalFilter)
 
 ------------------------------------------------------
--- ROW BUILDER
+-- ROW BUILDER (LOG & ALL PLAYER) - klik = buka Profile
 ------------------------------------------------------
 local function glassRowBase(row)
     row.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -396,61 +651,39 @@ local function makeLogItem(parentScroll, accentColor, info, kind, atTimestamp, i
     rounded(avatar, 14)
     avatar.Parent = row
 
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Name = "Text"
-    textLabel.BackgroundTransparency = 1
-    textLabel.Size = UDim2.new(1, -120, 1, 0)
-    textLabel.Position = UDim2.new(0, 46, 0, 0)
-    textLabel.Font = Enum.Font.Gotham
-    textLabel.TextSize = 14
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Center
-    textLabel.TextColor3 = Color3.fromRGB(40, 40, 70)
-    textLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    local label = Instance.new("TextLabel")
+    label.Name = "Text"
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -120, 1, 0)
+    label.Position = UDim2.new(0, 46, 0, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextColor3 = Color3.fromRGB(40, 40, 70)
+    label.TextTruncate = Enum.TextTruncate.AtEnd
     local prefix = (kind == "join") and "✅" or "🚪"
     local role   = isFriend and "Teman" or "Pemain"
     local timeStr= hhmm(atTimestamp)
-    textLabel.Text = string.format("%s %s  (@%s) • %s • %s", prefix, info.displayName or info.name, info.name, role, timeStr)
-    textLabel.Parent = row
+    label.Text = string.format("%s %s  (@%s) • %s • %s", prefix, info.displayName or info.name, info.name, role, timeStr)
+    label.Parent = row
 
-    if isFriend then
-        local chip = Instance.new("TextLabel")
-        chip.Name = "FriendChip"
-        chip.BackgroundColor3 = Color3.fromRGB(220, 240, 230)
-        chip.BackgroundTransparency = 0.1
-        chip.Size = UDim2.new(0, 70, 0, 20)
-        chip.Position = UDim2.new(1, -80, 0.5, -10)
-        chip.Font = Enum.Font.GothamMedium
-        chip.TextSize = 12
-        chip.Text = "Friend"
-        chip.TextColor3 = Color3.fromRGB(40, 80, 50)
-        chip.BorderSizePixel = 0
-        chip.Parent = row
-        rounded(chip, 10)
-        stroked(chip, Color3.fromRGB(180, 210, 190), 1, 0.5)
-    else
-        local btn = Instance.new("TextButton")
-        btn.Name = "Link"
-        btn.AutoButtonColor = false
-        btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        btn.BackgroundTransparency = 0.2
-        btn.Size = UDim2.new(0, 30, 0, 22)
-        btn.Position = UDim2.new(1, -38, 0.5, -11)
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 14
-        btn.Text = "🔗"
-        btn.TextColor3 = Color3.fromRGB(40, 40, 70)
-        btn.BorderSizePixel = 0
-        btn.Parent = row
-        rounded(btn, 8)
-        stroked(btn, Color3.fromRGB(200, 210, 230), 1, 0.5)
-        btn.MouseButton1Click:Connect(function()
-            copyOrAnnounce(profileUrl(info.userId))
-        end)
-    end
+    local linkBtn = smallGlassButton("🔗")
+    linkBtn.Name = "Link"
+    linkBtn.Size = UDim2.new(0, 30, 0, 22)
+    linkBtn.Position = UDim2.new(1, -38, 0.5, -11)
+    linkBtn.Parent = row
+
+    linkBtn.MouseButton1Click:Connect(function()
+        copyOrAnnounce(profileUrl(info.userId))
+    end)
 
     row.MouseButton1Click:Connect(function()
-        copyOrAnnounce(profileUrl(info.userId))
+        if openProfile then
+            openProfile(info)
+        else
+            copyOrAnnounce(profileUrl(info.userId))
+        end
     end)
 
     return row
@@ -478,72 +711,48 @@ local function makeAllItem(parentScroll, info, isFriend)
     rounded(avatar, 13)
     avatar.Parent = row
 
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Name = "Text"
-    textLabel.BackgroundTransparency = 1
-    textLabel.Size = UDim2.new(1, -100, 1, 0)
-    textLabel.Position = UDim2.new(0, 46, 0, 0)
-    textLabel.Font = Enum.Font.Gotham
-    textLabel.TextSize = 14
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextYAlignment = Enum.TextYAlignment.Center
-    textLabel.TextColor3 = Color3.fromRGB(40, 40, 70)
-    textLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    local label = Instance.new("TextLabel")
+    label.Name = "Text"
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -100, 1, 0)
+    label.Position = UDim2.new(0, 46, 0, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextColor3 = Color3.fromRGB(40, 40, 70)
+    label.TextTruncate = Enum.TextTruncate.AtEnd
     local txt = string.format("%s  (@%s)", info.displayName or info.name, info.name)
     if isFriend then
         txt = txt .. "  ⭐"
     end
-    textLabel.Text = txt
-    textLabel.Parent = row
+    label.Text = txt
+    label.Parent = row
 
-    local btn = Instance.new("TextButton")
-    btn.Name = "Link"
-    btn.AutoButtonColor = false
-    btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    btn.BackgroundTransparency = 0.2
-    btn.Size = UDim2.new(0, 30, 0, 22)
-    btn.Position = UDim2.new(1, -38, 0.5, -11)
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 14
-    btn.Text = "🔗"
-    btn.TextColor3 = Color3.fromRGB(40, 40, 70)
-    btn.BorderSizePixel = 0
-    btn.Parent = row
-    rounded(btn, 8)
-    stroked(btn, Color3.fromRGB(200, 210, 230), 1, 0.5)
+    local linkBtn = smallGlassButton("🔗")
+    linkBtn.Name = "Link"
+    linkBtn.Size = UDim2.new(0, 30, 0, 22)
+    linkBtn.Position = UDim2.new(1, -38, 0.5, -11)
+    linkBtn.Parent = row
 
-    btn.MouseButton1Click:Connect(function()
+    linkBtn.MouseButton1Click:Connect(function()
         copyOrAnnounce(profileUrl(info.userId))
     end)
 
     row.MouseButton1Click:Connect(function()
-        copyOrAnnounce(profileUrl(info.userId))
+        if openProfile then
+            openProfile(info)
+        else
+            copyOrAnnounce(profileUrl(info.userId))
+        end
     end)
 
     return row
 end
 
 ------------------------------------------------------
--- SEGMENTED CONTROL (Join / Leave / Player)
+-- SEGMENTED CONTROL LOGIC (Join / Leave / Player / Profile)
 ------------------------------------------------------
-local function layoutSegments()
-    local list = {segJoin, segLeave, segAll}
-    local n = #list
-    local totalW = SEG_PAD * 2 + SEG_ITEM_W * n
-    segWrap.Size = UDim2.new(0, totalW, 0, 24)
-    segScroll.CanvasSize = UDim2.new(0, totalW, 0, 0)
-
-    indicator.Size = UDim2.new(0, SEG_ITEM_W - SEG_PAD * 2, 1, -SEG_PAD * 2)
-    for i, btn in ipairs(list) do
-        btn.Position = UDim2.new(0, SEG_PAD + (i - 1) * SEG_ITEM_W, 0, 0)
-    end
-end
-
-layoutSegments()
-segWrap:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-    segScroll.CanvasSize = UDim2.new(0, segWrap.AbsoluteSize.X, 0, 0)
-end)
-
 local activeTab = "Join"
 
 local function moveIndicatorTo(index)
@@ -552,7 +761,7 @@ local function moveIndicatorTo(index)
 end
 
 local function updateSegmentVisuals(index)
-    local list = {segJoin, segLeave, segAll}
+    local list = {segJoin, segLeave, segAll, segProfile}
     for i, btn in ipairs(list) do
         btn.TextTransparency = (i == index) and 0 or 0.3
         btn.Font = (i == index) and Enum.Font.GothamSemibold or Enum.Font.GothamMedium
@@ -561,41 +770,63 @@ end
 
 local function setTab(tab)
     activeTab = tab
+
     if tab == "Join" then
         scrollJoin.Visible  = true
         scrollLeave.Visible = false
         scrollAll.Visible   = false
+        ProfilePage.Visible = false
+        searchWrap.Visible  = true
+        applyListAreaLayout()
         moveIndicatorTo(1)
         updateSegmentVisuals(1)
+
     elseif tab == "Leave" then
         scrollJoin.Visible  = false
         scrollLeave.Visible = true
         scrollAll.Visible   = false
+        ProfilePage.Visible = false
+        searchWrap.Visible  = true
+        applyListAreaLayout()
         moveIndicatorTo(2)
         updateSegmentVisuals(2)
-    else -- Player
+
+    elseif tab == "Player" then
         scrollJoin.Visible  = false
         scrollLeave.Visible = false
         scrollAll.Visible   = true
+        ProfilePage.Visible = false
+        searchWrap.Visible  = true
+        applyListAreaLayout()
         moveIndicatorTo(3)
         updateSegmentVisuals(3)
+
+    elseif tab == "Profile" then
+        scrollJoin.Visible  = false
+        scrollLeave.Visible = false
+        scrollAll.Visible   = false
+        ProfilePage.Visible = true
+        searchWrap.Visible  = false
+        moveIndicatorTo(4)
+        updateSegmentVisuals(4)
     end
+
     applyGlobalFilter()
 end
 
-segJoin.MouseButton1Click:Connect(function() setTab("Join") end)
-segLeave.MouseButton1Click:Connect(function() setTab("Leave") end)
-segAll.MouseButton1Click:Connect(function() setTab("Player") end)
+segJoin.MouseButton1Click:Connect(function()  setTab("Join")    end)
+segLeave.MouseButton1Click:Connect(function() setTab("Leave")   end)
+segAll.MouseButton1Click:Connect(function()   setTab("Player")  end)
+segProfile.MouseButton1Click:Connect(function() setTab("Profile") end)
 
 setTab("Join")
 
 ------------------------------------------------------
--- TOAST UI (buat teman join/leave)
+-- TOAST UI (NOTIF teman join/leave)
 ------------------------------------------------------
 local toastGui do
     local old = PlayerGui:FindFirstChild("AxaJoinLeaveToast")
     if old then old:Destroy() end
-
     toastGui = Instance.new("ScreenGui")
     toastGui.Name = "AxaJoinLeaveToast"
     toastGui.ResetOnSpawn = false
@@ -615,7 +846,6 @@ toastRoot.BackgroundTransparency = 1
 toastRoot.Visible = false
 toastRoot.Parent = toastGui
 rounded(toastRoot, 12)
-
 local toastStroke = stroked(toastRoot, Color3.fromRGB(255, 255, 255), 1, 1)
 
 local toastText = Instance.new("TextLabel")
@@ -632,11 +862,23 @@ toastText.TextTransparency = 1
 toastText.Parent = toastRoot
 
 local function tweenOBJ(obj, t, props)
-    return TweenService:Create(obj, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+    return TweenService:Create(
+        obj,
+        TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        props
+    )
 end
 
 local toastBusy  = false
 local toastQueue = {}
+local notifEnabled = true
+
+local function setNotifUI(on)
+    notifEnabled = on and true or false
+    notifBtn.Text = on and "NOTIF: ON" or "NOTIF: OFF"
+    notifBtn.TextTransparency = on and 0 or 0.25
+    notifBtn.BackgroundTransparency = on and 0.35 or 0.5
+end
 
 local function playToast(kind, msg)
     toastRoot.Visible = true
@@ -654,11 +896,13 @@ local function playToast(kind, msg)
     tweenOBJ(toastRoot, 0.16, {Position = UDim2.new(0.5, 0, 0, -50), BackgroundTransparency = 1}):Play()
     tweenOBJ(toastStroke, 0.16, {Transparency = 1}):Play()
     tweenOBJ(toastText, 0.16, {TextTransparency = 1}):Play()
+
     task.wait(0.18)
     toastRoot.Visible = false
 end
 
-local function pushToast(kind, msg)
+pushToast = function(kind, msg)
+    if not notifEnabled then return end
     table.insert(toastQueue, {kind = kind, msg = msg})
     if toastBusy then return end
     toastBusy = true
@@ -669,8 +913,13 @@ local function pushToast(kind, msg)
     toastBusy = false
 end
 
+setNotifUI(true)
+notifBtn.MouseButton1Click:Connect(function()
+    setNotifUI(not notifEnabled)
+end)
+
 ------------------------------------------------------
--- SOUND TOGGLE
+-- SOUND TOGGLE (CHIME join/leave)
 ------------------------------------------------------
 local soundEnabled = true
 local JOIN_SOUND_ID  = "rbxassetid://6026984224"
@@ -686,6 +935,7 @@ end
 local function playChime(kind)
     if not soundEnabled then return end
     local id = (kind == "join") and JOIN_SOUND_ID or LEAVE_SOUND_ID
+    if not id or id == "" then return end
     local s = Instance.new("Sound")
     s.SoundId = id
     s.Volume = 0.5
@@ -702,7 +952,7 @@ soundBtn.MouseButton1Click:Connect(function()
 end)
 
 ------------------------------------------------------
--- FRIEND CACHE
+-- FRIEND CACHE & STATUS SAFE
 ------------------------------------------------------
 local friendSet = {}
 
@@ -729,7 +979,7 @@ end
 task.spawn(seedFriends)
 
 local function isFriendUserId(userId)
-    if userId == nil then return false end
+    if not userId then return false end
     if friendSet[userId] then return true end
     local ok, res = pcall(function()
         return LocalPlayer:IsFriendsWith(userId)
@@ -741,12 +991,360 @@ local function isFriendUserId(userId)
     return false
 end
 
+local function getFriendStatusSafe(targetPlayer)
+    local ok, status = pcall(function()
+        return LocalPlayer:GetFriendStatus(targetPlayer)
+    end)
+    return ok and status or Enum.FriendStatus.Unknown
+end
+
+local function sendFriendRequestSafe(targetPlayer)
+    if not targetPlayer or not targetPlayer.Parent then
+        return false, "Target tidak ditemukan / sudah keluar."
+    end
+    if targetPlayer == LocalPlayer then
+        return false, "Tidak bisa kirim ke diri sendiri."
+    end
+
+    local st = getFriendStatusSafe(targetPlayer)
+    if st == Enum.FriendStatus.Friend then
+        return false, "Sudah berteman."
+    elseif st == Enum.FriendStatus.FriendRequestSent then
+        return false, "Permintaan sudah dikirim."
+    elseif st == Enum.FriendStatus.FriendRequestReceived then
+        return false, "Mereka sudah kirim permintaan."
+    end
+
+    local ok, err = pcall(function()
+        if LocalPlayer.RequestFriendship then
+            LocalPlayer:RequestFriendship(targetPlayer)
+        else
+            Players:RequestFriendship(LocalPlayer, targetPlayer)
+        end
+    end)
+    if not ok then
+        return false, "Gagal kirim: " .. tostring(err)
+    end
+
+    local t0 = os.clock()
+    while os.clock() - t0 < 2.0 do
+        RunService.Heartbeat:Wait()
+        local now = getFriendStatusSafe(targetPlayer)
+        if now == Enum.FriendStatus.FriendRequestSent or now == Enum.FriendStatus.Friend then
+            return true
+        end
+    end
+    return false, "Tidak ada konfirmasi (limit/privasi)."
+end
+
+local function revokeFriendshipSafe(targetPlayer)
+    if not targetPlayer or not targetPlayer.Parent then
+        return false, "Target tidak ditemukan / sudah keluar."
+    end
+    if getFriendStatusSafe(targetPlayer) ~= Enum.FriendStatus.Friend then
+        return false, "Belum berteman."
+    end
+
+    local ok, err = pcall(function()
+        if LocalPlayer.RevokeFriendship then
+            LocalPlayer:RevokeFriendship(targetPlayer)
+        else
+            Players:RevokeFriendship(LocalPlayer, targetPlayer)
+        end
+    end)
+    if not ok then
+        return false, "Gagal hapus: " .. tostring(err)
+    end
+
+    local t0 = os.clock()
+    while os.clock() - t0 < 2.0 do
+        RunService.Heartbeat:Wait()
+        if getFriendStatusSafe(targetPlayer) ~= Enum.FriendStatus.Friend then
+            return true
+        end
+    end
+    return false, "Tidak ada konfirmasi (jaringan/limit)."
+end
+
 ------------------------------------------------------
--- DATA & EVENT HANDLERS
+-- PROFILE LOGIC
 ------------------------------------------------------
+local ActiveProfile
+local DurConn
+local geoChangeConns = {}
+
+local function disconnectGeoConns()
+    for _, c in ipairs(geoChangeConns) do
+        if c then c:Disconnect() end
+    end
+    geoChangeConns = {}
+end
+
+local function statusToText(st)
+    if st == Enum.FriendStatus.Friend then
+        return "✅ Sudah berteman"
+    elseif st == Enum.FriendStatus.NotFriend then
+        return "❌ Belum berteman"
+    elseif st == Enum.FriendStatus.FriendRequestSent then
+        return "📨 Permintaan dikirim"
+    elseif st == Enum.FriendStatus.FriendRequestReceived then
+        return "📥 Permintaan masuk"
+    else
+        return "-"
+    end
+end
+
+local function readGeo(plr)
+    if not plr then
+        return "Tidak tersedia", "Tidak tersedia", "Tidak tersedia"
+    end
+    local cc  = plr:GetAttribute("GeoCountryCode")
+    local cn  = plr:GetAttribute("GeoCountryName")
+    local prv = plr:GetAttribute("GeoProvince")
+    local cty = plr:GetAttribute("GeoCity")
+
+    local negara = (cn and #tostring(cn) > 0) and tostring(cn) or "Tidak tersedia"
+    if cc and #tostring(cc) > 0 then
+        negara = string.format("%s (%s)", negara, tostring(cc))
+    end
+    local prov = (prv and #tostring(prv) > 0) and tostring(prv) or "Tidak tersedia"
+    local kota = (cty and #tostring(cty) > 0) and tostring(cty) or "Tidak tersedia"
+    return negara, prov, kota
+end
+
 local joinTimes = {}
 local allRows   = {}
 
+local function renderProfile(info)
+    clearInfo()
+    if DurConn then DurConn:Disconnect() end
+    DurConn = nil
+    disconnectGeoConns()
+
+    ProfileName.Text = string.format("%s  (@%s)", info.displayName or info.name, info.name)
+
+    local plr = Players:GetPlayerByUserId(info.userId)
+    local accountAgeDays = plr and plr.AccountAge or nil
+    local createdDateTxt = "-"
+    if accountAgeDays then
+        local createdT = os.date("*t", os.time() - accountAgeDays * 24 * 60 * 60)
+        createdDateTxt = string.format("%02d/%02d/%04d", createdT.day, createdT.month, createdT.year)
+    end
+
+    local usiaTxt = "-"
+    if accountAgeDays then
+        local y, m, d = splitYMD(accountAgeDays)
+        usiaTxt = string.format("%d hari  (≈ %d th %d bln %d hr)", accountAgeDays, y, m, d)
+    end
+
+    local memberTxt = "-"
+    if plr and plr.MembershipType then
+        if plr.MembershipType == Enum.MembershipType.Premium then
+            memberTxt = "Premium"
+        elseif plr.MembershipType == Enum.MembershipType.None then
+            memberTxt = "None"
+        else
+            memberTxt = tostring(plr.MembershipType):gsub("Enum%.MembershipType%.", "")
+        end
+    end
+
+    if accountAgeDays then
+        if accountAgeDays < 7 then
+            addBadgeRow("🚩 Akun Baru (<7 hari)", Color3.fromRGB(255, 220, 220))
+        elseif accountAgeDays < 30 then
+            addBadgeRow("⚠️ Akun <30 hari", Color3.fromRGB(255, 240, 210))
+        elseif accountAgeDays >= 365 then
+            addBadgeRow("⭐ Veteran (≥1 tahun)", Color3.fromRGB(230, 255, 230))
+        end
+    end
+
+    local usernameDisplay = "@" .. tostring(info.name)
+    makeField("Display Name", tostring(info.displayName or info.name))
+    makeField("Username", usernameDisplay, {
+        hasButtons = true,
+        copyText   = usernameDisplay,
+        icon       = "📋",
+    })
+    makeField("UserId", tostring(info.userId), {
+        hasButtons = true,
+        copyText   = tostring(info.userId),
+        icon       = "🆔",
+    })
+
+    local initialStatus = (plr and getFriendStatusSafe(plr)) or Enum.FriendStatus.Unknown
+    local _, friendLbl = makeField("Friendship dengan Kamu", statusToText(initialStatus))
+
+    -- Row tombol tambahan: Tambah Teman / Hapus Teman
+    local btnRow = Instance.new("Frame")
+    btnRow.Name = "Row_FriendActions"
+    btnRow.Size = UDim2.new(1, 0, 0, 32)
+    btnRow.BackgroundTransparency = 1
+    btnRow.Parent = ProfileList
+
+    local addBtn = smallGlassButton("Tambah Teman")
+    addBtn.Size = UDim2.new(0, 130, 0, 24)
+    addBtn.Position = UDim2.new(0, 0, 0.5, -12)
+    addBtn.Parent = btnRow
+
+    local remBtn = smallGlassButton("Hapus Teman")
+    remBtn.Size = UDim2.new(0, 130, 0, 24)
+    remBtn.Position = UDim2.new(0, 140, 0.5, -12)
+    remBtn.Parent = btnRow
+    local remStroke = remBtn:FindFirstChildOfClass("UIStroke")
+    if remStroke then
+        remStroke.Color = Color3.fromRGB(255, 69, 58)
+    end
+
+    local function setBtnState(b, enabled, label)
+        b.Active = enabled
+        b.AutoButtonColor = enabled
+        b.TextTransparency = enabled and 0 or 0.35
+        if label then b.Text = label end
+    end
+
+    local function refreshFriendUI()
+        if not plr then
+            friendLbl.Text = "-"
+            setBtnState(addBtn, false)
+            setBtnState(remBtn, false)
+            return
+        end
+        local st = getFriendStatusSafe(plr)
+        friendLbl.Text = statusToText(st)
+
+        if st == Enum.FriendStatus.Friend then
+            setBtnState(addBtn, false, "Sudah Teman")
+            setBtnState(remBtn, true, "Hapus Teman")
+        elseif st == Enum.FriendStatus.NotFriend then
+            setBtnState(addBtn, true, "Tambah Teman")
+            setBtnState(remBtn, false, "Hapus Teman")
+        elseif st == Enum.FriendStatus.FriendRequestSent then
+            setBtnState(addBtn, false, "Terkirim")
+            setBtnState(remBtn, false, "Hapus Teman")
+        elseif st == Enum.FriendStatus.FriendRequestReceived then
+            setBtnState(addBtn, false, "Menunggu")
+            setBtnState(remBtn, false, "Hapus Teman")
+        else
+            setBtnState(addBtn, false)
+            setBtnState(remBtn, false)
+        end
+    end
+
+    refreshFriendUI()
+
+    addBtn.MouseButton1Click:Connect(function()
+        if not plr then return end
+        setBtnState(addBtn, false, "Mengirim…")
+        local ok, reason = sendFriendRequestSafe(plr)
+        if ok then
+            friendLbl.Text = "📨 Permintaan dikirim"
+            pushToast("join", "Permintaan pertemanan dikirim")
+        else
+            friendLbl.Text = "❌ Gagal: " .. tostring(reason)
+            pushToast("leave", "Gagal kirim: " .. tostring(reason))
+        end
+        refreshFriendUI()
+    end)
+
+    remBtn.MouseButton1Click:Connect(function()
+        if not plr then return end
+        setBtnState(remBtn, false, "Menghapus…")
+        local ok, reason = revokeFriendshipSafe(plr)
+        if ok then
+            friendLbl.Text = "❌ Belum berteman"
+            pushToast("leave", "Pertemanan dihapus")
+        else
+            friendLbl.Text = "⚠️ Gagal hapus: " .. tostring(reason)
+            pushToast("leave", "Gagal hapus: " .. tostring(reason))
+        end
+        refreshFriendUI()
+    end)
+
+    local genderTxt = "-"
+    if plr then
+        local g = plr:GetAttribute("Gender")
+        if typeof(g) == "string" and #g > 0 then
+            genderTxt = g
+        end
+    end
+
+    local joinAtTxt, durTxt = "-", "-"
+    if joinTimes[info.userId] then
+        local jt = os.date("*t", joinTimes[info.userId])
+        joinAtTxt = string.format("%02d:%02d:%02d", jt.hour, jt.min, jt.sec)
+        durTxt = durHMS(os.time() - joinTimes[info.userId])
+    end
+
+    makeField("Jenis Kelamin", genderTxt)
+    makeField("Tanggal Buat Akun", createdDateTxt)
+    makeField("Usia Akun", usiaTxt)
+    makeField("Membership", memberTxt)
+    makeField("Bergabung ke Server (lokal)", joinAtTxt)
+
+    local _, durLbl = makeField("Durasi di Server (lokal)", durTxt)
+
+    local _, linkLbl = makeField("Link Profil (copy)", profileUrl(info.userId), {
+        hasButtons = true,
+        copyText   = profileUrl(info.userId),
+        icon       = "🔗",
+    })
+    linkLbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+    addBadgeRow("🌏 Lokasi Saat Ini", Color3.fromRGB(220, 230, 255))
+    local negara, prov, kota = readGeo(plr)
+    local _, negaraLbl = makeField("Negara",  negara)
+    local _, provLbl   = makeField("Provinsi", prov)
+    local _, kotaLbl   = makeField("Kota",    kota)
+
+    if joinTimes[info.userId] then
+        DurConn = RunService.Heartbeat:Connect(function()
+            if activeTab == "Profile" and ProfilePage.Visible and durLbl then
+                durLbl.Text = durHMS(os.time() - joinTimes[info.userId])
+            end
+        end)
+    end
+
+    if plr then
+        table.insert(geoChangeConns, plr:GetAttributeChangedSignal("GeoCountryCode"):Connect(function()
+            local ng, _, _ = readGeo(plr)
+            negaraLbl.Text = ng
+        end))
+        table.insert(geoChangeConns, plr:GetAttributeChangedSignal("GeoCountryName"):Connect(function()
+            local ng, _, _ = readGeo(plr)
+            negaraLbl.Text = ng
+        end))
+        table.insert(geoChangeConns, plr:GetAttributeChangedSignal("GeoProvince"):Connect(function()
+            local _, p, _ = readGeo(plr)
+            provLbl.Text = p
+        end))
+        table.insert(geoChangeConns, plr:GetAttributeChangedSignal("GeoCity"):Connect(function()
+            local _, _, k = readGeo(plr)
+            kotaLbl.Text = k
+        end))
+    end
+end
+
+openProfile = function(info)
+    ActiveProfile = info
+    renderProfile(info)
+    setTab("Profile")
+end
+
+ProfileCopy.MouseButton1Click:Connect(function()
+    if ActiveProfile then
+        copyOrAnnounce(profileUrl(ActiveProfile.userId))
+    end
+end)
+
+ProfileRefresh.MouseButton1Click:Connect(function()
+    if ActiveProfile then
+        renderProfile(ActiveProfile)
+    end
+end)
+
+------------------------------------------------------
+-- ROSTER & EVENT JOIN/LEAVE
+------------------------------------------------------
 local function upsertAll(info)
     local isFriend = isFriendUserId(info.userId)
     local row = allRows[info.userId]
@@ -795,8 +1393,8 @@ end
 for _, p in ipairs(Players:GetPlayers()) do
     joinTimes[p.UserId] = os.time()
     upsertAll({
-        userId = p.UserId,
-        name = p.Name,
+        userId      = p.UserId,
+        name        = p.Name,
         displayName = p.DisplayName,
     })
 end
@@ -804,7 +1402,11 @@ end
 -- Event join/leave
 Players.PlayerAdded:Connect(function(p)
     joinTimes[p.UserId] = os.time()
-    local info = { userId = p.UserId, name = p.Name, displayName = p.DisplayName }
+    local info = {
+        userId      = p.UserId,
+        name        = p.Name,
+        displayName = p.DisplayName,
+    }
     upsertAll(info)
 
     if p ~= LocalPlayer then
@@ -818,7 +1420,11 @@ Players.PlayerAdded:Connect(function(p)
 end)
 
 Players.PlayerRemoving:Connect(function(p)
-    local info = { userId = p.UserId, name = p.Name, displayName = p.DisplayName }
+    local info = {
+        userId      = p.UserId,
+        name        = p.Name,
+        displayName = p.DisplayName,
+    }
     removeAll(p.UserId)
 
     if p ~= LocalPlayer then
