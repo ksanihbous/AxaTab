@@ -164,30 +164,33 @@ local function disconnectRespawn()
     end
 end
 
--- STOP SPECTATE FINAL:
+-- helper: reset kamera ke LocalPlayer (mirror hardResetCameraToLocal di CORE)
+local function hardResetCameraToLocal()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+
+    local char = player.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+    cam.CameraType = Enum.CameraType.Custom
+    if hum then
+        cam.CameraSubject = hum
+    else
+        cam.CameraSubject = nil
+    end
+    cam.AudioListener = Enum.CameraAudioListener.Camera
+end
+
+-- STOP SPECTATE:
 -- - Clear target & mode
--- - Reset kamera ke LocalPlayer
+-- - Reset kamera ke LocalPlayer (sama feel-nya dengan klik dock)
 -- - Paksa status jadi Idle
 local function stopSpectate()
-    -- matikan mode spect
     disconnectRespawn()
     currentSpectateTarget = nil
     spectateMode          = "none"
 
-    local cam = workspace.CurrentCamera
-    if cam then
-        local char = player.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-
-        cam.CameraType    = Enum.CameraType.Custom
-        cam.AudioListener = Enum.CameraAudioListener.Camera
-        if hum then
-            cam.CameraSubject = hum
-        else
-            cam.CameraSubject = nil
-        end
-    end
-
+    hardResetCameraToLocal()
     setSpectateStatus("Idle")
 end
 
