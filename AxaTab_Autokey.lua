@@ -14,11 +14,11 @@
 --------------------------------------------------
 local okEnv = (typeof(TAB_FRAME) == "Instance")
 
-local Players          = Players           or game:GetService("Players")
-local LocalPlayer      = LocalPlayer       or Players.LocalPlayer
-local UserInputService = UserInputService  or game:GetService("UserInputService")
+local Players             = Players             or game:GetService("Players")
+local LocalPlayer         = LocalPlayer         or Players.LocalPlayer
+local UserInputService    = UserInputService    or game:GetService("UserInputService")
 local VirtualInputManager = VirtualInputManager or game:GetService("VirtualInputManager")
-local CoreGui          = CoreGui           or game:GetService("CoreGui")
+local CoreGui             = CoreGui             or game:GetService("CoreGui")
 
 local playerGui = nil
 pcall(function()
@@ -118,7 +118,7 @@ akLayout.Parent = akList
 --------------------------------------------------
 --  CONFIG: KEY + ENTRIES SCRIPT
 --------------------------------------------------
--- EDIT KEY DI SINI
+-- EDIT KEY DI SINI (satu key untuk semua script ENTRIES)
 local KEY_STRING = "b5a60c22-68f1-4ee9-8e73-16f66179bf36"
 
 -- Tambah script lain tinggal push ke tabel ini
@@ -128,11 +128,41 @@ local ENTRIES = {
         url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/indohangout.lua",
         method = "HttpGetAsync",
     },
-    -- {
-    --     label  = "SCRIPT LAIN",
-    --     url    = "https://raw.githubusercontent.com/....",
-    --     method = "HttpGet",
-    -- },
+    {
+        label  = "INDO VOICE",
+        url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/indovoice.lua",
+        method = "HttpGetAsync",
+    },
+    {
+        label  = "INDO CAMP",
+        url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/indocamp.lua",
+        method = "HttpGetAsync",
+    },
+    {
+        label  = "CABIN INDO",
+        url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/cabinindo.lua",
+        method = "HttpGetAsync",
+    },
+    {
+        label  = "KOTA ROLEPLAY",
+        url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/KotaRoleplay.lua",
+        method = "HttpGetAsync",
+    },
+    {
+        label  = "INDO BEACH",
+        url    = "https://raw.githubusercontent.com/Nearastro/Nearastro/refs/heads/main/indo_Beach.lua",
+        method = "HttpGetAsync",
+    },
+    {
+        label  = "UNIVERSALL TROL",
+        url    = "https://raw.githubusercontent.com/xxCary-UC/HotRoblox/refs/heads/main/universaltroll.lua",
+        method = "HttpGetAsync",
+    },
+    {
+        label  = "UNIVERSALL INVISIBLE",
+        url    = "https://raw.githubusercontent.com/GhostPlayer352/Test4/main/Invisible%20Gui",
+        method = "HttpGetAsync",
+    },
 }
 
 if KEY_STRING and KEY_STRING ~= "" then
@@ -201,12 +231,10 @@ local function fireSignalStrong(signal)
         pcall(function()
             for _, conn in ipairs(getCons(signal)) do
                 if conn then
-                    -- Banyak executor return table dengan field .Function
                     pcall(function()
                         if typeof(conn) == "table" and conn.Function then
                             conn.Function()
                         elseif typeof(conn) == "userdata" then
-                            -- fallback generik
                             if conn.Function then
                                 conn.Function()
                             elseif conn.Fire then
@@ -237,7 +265,6 @@ local function clickSubmitWithCursor(submitButton)
         or fireSignalStrong(submitButton.Activated)
 
     if hit then
-        -- kalau sudah ada handler yang kepanggil, cukup
         return
     end
 
@@ -263,7 +290,6 @@ local function clickSubmitWithCursor(submitButton)
         moveMouse(x, y)
         task.wait(0.03)
         pcall(function()
-            -- Tekan mouse button kiri (0) down/up
             VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
             task.wait(0.02)
             VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
@@ -271,7 +297,6 @@ local function clickSubmitWithCursor(submitButton)
     end
 
     clickAt(targetX, targetY)
-    -- Balikkan cursor ke posisi awal (biar nggak ganggu)
     moveMouse(oldX, oldY)
 end
 
@@ -334,14 +359,12 @@ local function autoKeyAndSubmit()
         return
     end
 
-    -- Isi key
     pcall(function()
         keyBox:CaptureFocus()
         keyBox.Text = KEY_STRING
         keyBox:ReleaseFocus()
     end)
 
-    -- Beri jeda sedikit biar UI sempat update
     task.wait(0.4)
     clickSubmitWithCursor(submitButton)
 end
@@ -393,9 +416,8 @@ local function runEntry(entry, buttonInstance)
         return
     end
 
-    -- Setelah script jalan, tunggu sebentar lalu hunting ModernKeyUI
     task.spawn(function()
-        task.wait(2) -- Kalau mau, bisa kamu ubah ke 10–15 detik
+        task.wait(2) -- kalau mau diubah ke 10–15 detik tinggal ganti di sini
         autoKeyAndSubmit()
         if buttonInstance and buttonInstance.Parent then
             buttonInstance.Text = entry.label or "Entry"
