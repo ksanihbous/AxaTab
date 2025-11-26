@@ -10,8 +10,9 @@ local player       = LocalPlayer
 ------------------------------------------------------
 -- WAKTU & FORMAT UPTIME
 ------------------------------------------------------
-local playStartTime = os.time()   -- awal main (saat script jalan)
-local antiStartTime = nil         -- diisi saat AntiAFK di-enable
+local playStartTime      = os.time()   -- awal main (saat script/tab jalan)
+local antiStartTime      = nil         -- diisi saat AntiAFK di-enable
+local antiAccumulatedSec = 0           -- total durasi AntiAFK untuk 1 session (freeze saat OFF)
 
 local function formatHMS(sec)
     sec = math.max(0, math.floor(sec or 0))
@@ -39,7 +40,7 @@ antiHeader.Parent = antiTabFrame
 
 local antiSub = Instance.new("TextLabel")
 antiSub.Name = "Sub"
-antiSub.Size = UDim2.new(1, -10, 0, 32)
+antiSub.Size = UDim2.new(1, -10, 0, 34)
 antiSub.Position = UDim2.new(0, 5, 0, 26)
 antiSub.BackgroundTransparency = 1
 antiSub.Font = Enum.Font.Gotham
@@ -47,7 +48,8 @@ antiSub.TextSize = 12
 antiSub.TextColor3 = Color3.fromRGB(90, 90, 120)
 antiSub.TextXAlignment = Enum.TextXAlignment.Left
 antiSub.TextYAlignment = Enum.TextYAlignment.Top
-antiSub.Text = "Menahan idle kick Roblox + Auto Respawn + Auto Restart Route (AxaXyzReplayUI)."
+antiSub.TextWrapped = true
+antiSub.Text = "Menahan idle kick Roblox + auto respawn + auto restart route (AxaXyzReplayUI)."
 antiSub.Parent = antiTabFrame
 
 local antiToggleBtn = Instance.new("TextButton")
@@ -273,12 +275,21 @@ local function startAntiLoop()
 
             -- UPDATE UPTIME SETIAP DETIK
             local now = os.time()
+
+            -- Uptime Play: selalu jalan
             if antiUptimePlay then
                 local playSec = now - playStartTime
                 antiUptimePlay.Text = "Uptime Play: " .. formatHMS(playSec)
             end
+
+            -- Uptime AntiAFK:
+            --   - Saat ON: accumulated + (now - antiStartTime)
+            --   - Saat OFF: pakai accumulated saja (freeze)
             if antiUptimeAFK then
-                local antiSec = (antiStartTime and (now - antiStartTime)) or 0
+                local antiSec = antiAccumulatedSec
+                if antiEnabled and antiStartTime then
+                    antiSec = antiAccumulatedSec + (now - antiStartTime)
+                end
                 antiUptimeAFK.Text = "Uptime AntiAFK: " .. formatHMS(antiSec)
             end
 
@@ -383,7 +394,10 @@ local function enableAntiAFK()
         end)
     end
 
-    antiStartTime = os.time() -- mulai hitung uptime AntiAFK
+    -- Mulai session AntiAFK baru
+    antiAccumulatedSec = 0
+    antiStartTime      = os.time()
+
     setAntiEnabledUI(true)
     push("UI AntiAFK+ aktif ✅")
     startAntiLoop()
@@ -391,11 +405,17 @@ end
 
 local function disableAntiAFK()
     if not antiEnabled then return end
+
+    -- Freeze uptime di nilai terakhir (akumulasi)
+    if antiStartTime then
+        antiAccumulatedSec = antiAccumulatedSec + (os.time() - antiStartTime)
+        antiStartTime = nil
+    end
+
     setAntiEnabledUI(false)
     stillTime, totalDist, justRestarted = 0, 0, false
     lastState = nil
     afterRespawn = false
-    antiStartTime = nil -- reset uptime AntiAFK
     push("AntiAFK+ dimatikan ⛔️")
 end
 
@@ -411,6 +431,6 @@ end)
 _G.AxaHub_AntiAFK_Disable = disableAntiAFK
 
 ------------------------------------------------------
--- DEFAULT: AntiAFK LANGSUNG AKTIF
+-- DEFAULT: AntiAFK LANGSUNG AKTIF (AUTO TRUE)
 ------------------------------------------------------
 enableAntiAFK()
