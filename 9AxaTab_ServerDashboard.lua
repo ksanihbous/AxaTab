@@ -71,7 +71,7 @@ sub.Text = "Monitor info server, performa client, pemain online, dan utilitas (r
 sub.Parent = frame
 
 --==========================================================
--- BODY SCROLL (SEGALA KONTEN DI SINI, BISA SCROLL KE BAWAH)
+-- BODY SCROLL (SEMUA KONTEN DI SINI, BISA SCROLL KE BAWAH)
 --==========================================================
 local bodyScroll = frame:FindFirstChild("BodyScroll")
 if not bodyScroll or not bodyScroll:IsA("ScrollingFrame") then
@@ -81,7 +81,7 @@ if not bodyScroll or not bodyScroll:IsA("ScrollingFrame") then
     bodyScroll.Size = UDim2.new(1, 0, 1, -64)
     bodyScroll.BackgroundTransparency = 1
     bodyScroll.BorderSizePixel = 0
-    bodyScroll.ScrollBarThickness = 6                      -- lebih jelas
+    bodyScroll.ScrollBarThickness = 6
     bodyScroll.ScrollingDirection = Enum.ScrollingDirection.Y
     bodyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
     bodyScroll.Parent = frame
@@ -171,8 +171,8 @@ summaryLabel.TextWrapped = true
 summaryLabel.Text = "Memuat info server..."
 summaryLabel.Parent = summaryCard
 
-local startTime = tick()
-local smoothFPS = 60
+local startTime  = tick()
+local smoothFPS  = 60
 
 runService.RenderStepped:Connect(function(dt)
     local current = 1 / math.max(dt, 0.0001)
@@ -185,8 +185,10 @@ local function getPingMs()
         if not network then return nil end
         local serverStats = network.ServerStatsItem
         if not serverStats then return nil end
-        local stat = serverStats:FindFirstChild("Data Ping") or serverStats:FindFirstChild("Ping")
+        local stat = serverStats:FindFirstChild("Data Ping") or serverStats:FindChild("Ping")
+        if not stat then stat = serverStats:FindFirstChild("Ping") end
         if not stat then return nil end
+
         if stat.GetValue then
             return math.floor(stat:GetValue() + 0.5)
         elseif typeof(stat.Value) == "number" then
@@ -262,23 +264,33 @@ end)
 
 --==========================================================
 -- CARD 2: TOMBOL UTILITAS SERVER (REJOIN, HOP, COPY ID)
+--   -> BARIS TOMBOL DI DALAM SCROLLINGFRAME HORIZONTAL
 --==========================================================
 local actionCard = makeCard(90)
 makeSectionTitle(actionCard, "Utilitas Server")
 
-local btnHolder = Instance.new("Frame")
-btnHolder.Name = "ButtonHolder"
-btnHolder.Size = UDim2.new(1, -16, 0, 40)
-btnHolder.Position = UDim2.new(0, 8, 0, 34)
-btnHolder.BackgroundTransparency = 1
-btnHolder.Parent = actionCard
+-- ScrollingFrame horizontal untuk tombol-tombol
+local btnScroll = Instance.new("ScrollingFrame")
+btnScroll.Name = "ButtonScroll"
+btnScroll.Size = UDim2.new(1, -16, 0, 40)
+btnScroll.Position = UDim2.new(0, 8, 0, 34)
+btnScroll.BackgroundTransparency = 1
+btnScroll.BorderSizePixel = 0
+btnScroll.ScrollBarThickness = 4
+btnScroll.ScrollingDirection = Enum.ScrollingDirection.X
+btnScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+btnScroll.Parent = actionCard
 
 local btnLayout = Instance.new("UIListLayout")
 btnLayout.FillDirection = Enum.FillDirection.Horizontal
 btnLayout.SortOrder = Enum.SortOrder.LayoutOrder
 btnLayout.Padding = UDim.new(0, 6)
 btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-btnLayout.Parent = btnHolder
+btnLayout.Parent = btnScroll
+
+btnLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    btnScroll.CanvasSize = UDim2.new(0, btnLayout.AbsoluteContentSize.X + 6, 0, 0)
+end)
 
 local function makeSmallButton(text)
     local b = Instance.new("TextButton")
@@ -290,7 +302,7 @@ local function makeSmallButton(text)
     b.TextColor3 = Color3.fromRGB(50, 60, 110)
     b.Text = text
     b.AutoButtonColor = true
-    b.Parent = btnHolder
+    b.Parent = btnScroll
 
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, 10)
