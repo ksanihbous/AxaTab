@@ -9,15 +9,14 @@
 ------------------------------------------------
 --  ENV DARI CORE (fallback kalau standalone)
 ------------------------------------------------
-local Players              = Players              or game:GetService("Players")
-local HttpService          = HttpService          or game:GetService("HttpService")
-local TextChatService      = TextChatService      or game:GetService("TextChatService")
-local MarketplaceService   = MarketplaceService   or game:GetService("MarketplaceService")
-local ReplicatedStorage    = ReplicatedStorage    or game:GetService("ReplicatedStorage")
+local Players            = Players            or game:GetService("Players")
+local HttpService        = HttpService        or game:GetService("HttpService")
+local TextChatService    = TextChatService    or game:GetService("TextChatService")
+local MarketplaceService = MarketplaceService or game:GetService("MarketplaceService")
+local ReplicatedStorage  = ReplicatedStorage  or game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local playerGui
-
 pcall(function()
     playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
 end)
@@ -25,7 +24,6 @@ end)
 -- ROOT TAB (dari CORE) / fallback standalone
 local ROOT_FRAME = TAB_FRAME
 if not ROOT_FRAME then
-    -- fallback kalau dijalankan tanpa CORE
     local sg = Instance.new("ScreenGui")
     sg.Name = "AxaTab_ChatPublik_Standalone"
     sg.IgnoreGuiInset = true
@@ -80,15 +78,16 @@ local LOG_SYSTEM_MESSAGE  = true
 local LOG_LOCAL_PLAYER    = true
 local LOG_OTHER_PLAYERS   = true
 
--- MASTER SWITCH: kalau false -> TIDAK ADA relay / subtitle
+-- MASTER SWITCH:
+-- kalau false -> TIDAK ADA relay ke Discord/history + subtitle dimatikan
 local CHAT_FILTER_ENABLED = true
 
--- UI RUNTIME FILTER (checkbox)
-local FILTER_ALLCHAT            = true   -- chat player biasa (non-special)
-local FILTER_SYSTEMINFO         = true   -- system/info umum
-local FILTER_SPECIALCHAT        = true   -- chat dari SPECIAL user
-local FILTER_SYSTEMINFO_SPECIAL = true   -- system/info yang terkait SPECIAL userId/koneksi
-local FILTER_CHAT_KHUSUS        = false  -- system info khusus Mirethos/Kaelvorn oleh SPECIAL_USERS
+-- FILTER RUNTIME (checkbox)
+local FILTER_ALLCHAT            = true
+local FILTER_SYSTEMINFO         = true
+local FILTER_SPECIALCHAT        = true
+local FILTER_SYSTEMINFO_SPECIAL = true
+local FILTER_CHAT_KHUSUS        = false
 
 -- Subtitle hanya player terdekat
 local NEARBY_CAPTION_ONLY = false
@@ -107,54 +106,18 @@ local HISTORY_SEND_ON_EACH = false
 --  CONFIG SPECIAL PUBLIC CHAT
 ------------------------------------------------
 local SPECIAL_USERS = {
-    [8662842080] = {
-        username = "@Fairymeyyy",
-        name     = "Croffle IC",
-        discord  = "<@1207987135093936149>",
-    },
-    [8858338738] = {
-        username = "@zieeef",
-        name     = "Zie IC",
-        discord  = "<@1354602282418704536>",
-    },
-    [3902896904] = {
-        username = "@kotjolo",
-        name     = "Jeki IC",
-        discord  = "<@914910569436418128>",
-    },
-    [8980225079] = {
-        username = "@hanns_GOD",
-        name     = "Hans IC",
-        discord  = "<@1405950233929715863>",
-    },
-    [8661786368] = {
-        username = "@chocotreadss",
-        name     = "Yesha IC",
-        discord  = "<@1419885298581639211>",
-    },
-    [9154320458] = {
-        username = "@biwwa085",
-        name     = "Bebybolo HG",
-        discord  = "<@1425189351524012092>",
-    },
-    [8405726221] = {
-        username = "@yipinsipi",
-        name     = "Yiphin HG",
-        discord  = "<@1400344558059126894>",
-    },
-    [7941438813] = {
-        username = "@TripleA_666",
-        name     = "Miaw HG",
-        discord  = "<@1069652543203971174>",
-    },
-    [8957393843] = {
-        username = "@AxaXyz999",
-        name     = "AxaXyz999xBBHY",
-        discord  = "<@1403052152691101857>",
-    },
+    [8662842080] = { username = "@Fairymeyyy",  name = "Croffle IC",  discord = "<@1207987135093936149>" },
+    [8858338738] = { username = "@zieeef",      name = "Zie IC",      discord = "<@1354602282418704536>" },
+    [3902896904] = { username = "@kotjolo",     name = "Jeki IC",     discord = "<@914910569436418128>" },
+    [8980225079] = { username = "@hanns_GOD",   name = "Hans IC",     discord = "<@1405950233929715863>" },
+    [8661786368] = { username = "@chocotreadss",name = "Yesha IC",    discord = "<@1419885298581639211>" },
+    [9154320458] = { username = "@biwwa085",    name = "Bebybolo HG", discord = "<@1425189351524012092>" },
+    [8405726221] = { username = "@yipinsipi",   name = "Yiphin HG",   discord = "<@1400344558059126894>" },
+    [7941438813] = { username = "@TripleA_666", name = "Miaw HG",     discord = "<@1069652543203971174>" },
+    [8957393843] = { username = "@AxaXyz999",   name = "AxaXyz999xBBHY", discord = "<@1403052152691101857>" },
 }
 
-local SPECIAL_USER_IDS = {}
+local SPECIAL_USER_IDS   = {}
 local SPECIAL_DISCORD_MAP = {}
 
 for userId, info in pairs(SPECIAL_USERS) do
@@ -206,9 +169,7 @@ for _, plr in ipairs(Players:GetPlayers()) do
     updateConnectionSpecial(plr)
 end
 
-Players.PlayerAdded:Connect(function(plr)
-    updateConnectionSpecial(plr)
-end)
+Players.PlayerAdded:Connect(updateConnectionSpecial)
 
 ------------------------------------------------
 --  CONFIG WITA
@@ -289,9 +250,7 @@ local function detectHttpRequest()
 end
 
 local httpRequest = detectHttpRequest()
-if not httpRequest then
-    -- kalau executor nggak support HTTP, tetap jalanin subtitle & filter lokal
-end
+-- kalau nggak ada httpRequest, kita tetap pakai subtitle & history lokal (tanpa webhook)
 
 ------------------------------------------------
 --  INFO SERVER
@@ -344,6 +303,7 @@ end
 
 local function sendHistoryFile()
     if not HISTORY_ENABLED then return end
+    if not CHAT_FILTER_ENABLED then return end -- kalau filter OFF, jangan kirim batch juga
     if historyCount == 0 then return end
     if not WEBHOOK_URLS or #WEBHOOK_URLS == 0 then return end
     if not httpRequest then return end
@@ -415,6 +375,7 @@ end
 
 local function addHistoryLine(line)
     if not HISTORY_ENABLED then return end
+    if not CHAT_FILTER_ENABLED then return end  -- ekstra safety
     if not line or line == "" then return end
 
     historyCount   = historyCount + 1
@@ -520,13 +481,13 @@ local function updateSubtitleUI()
         label.Text = text
     end
 
-    -- MASTER GATE: kalau Chat Filter OFF -> subtitle disembunyikan
+    -- MASTER GATE: kalau Chat Filter OFF -> subtitle disembunyikan total
     frame.Visible = CHAT_FILTER_ENABLED and (#subtitleLines > 0)
 end
 
 local function pushSubtitleLine(text)
     if not CHAT_FILTER_ENABLED then
-        -- Kalau master filter OFF, subtitle sama sekali tidak ditampilkan
+        -- Chat Filter OFF: tidak boleh muncul subtitle
         return
     end
     if not text or text == "" then return end
@@ -539,7 +500,7 @@ end
 
 local function pushSubtitleMessage(channelName, displayName, authorName, messageText, isSystem, isSpecial, isPrivate, isKhusus, speakerPlayer)
     if not CHAT_FILTER_ENABLED then
-        -- Master OFF -> jangan tampilkan subtitle sama sekali
+        -- Chat Filter OFF: subtitle juga DI-NONAKTIFKAN
         return
     end
     if not messageText or messageText == "" then return end
@@ -658,9 +619,14 @@ local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
 end
 
 ------------------------------------------------
---  DISCORD WEBHOOK SENDER
+--  DISCORD WEBHOOK SENDER (DI-GATE LAGI DI SINI)
 ------------------------------------------------
 local function sendDiscordChat(authorName, displayName, userId, messageText, channelName, isSystem, isSpecialOverride, isKhususOverride)
+    -- MASTER SAFETY: kalau Chat Filter OFF, JANGAN PERNAH kirim ke Discord
+    if not CHAT_FILTER_ENABLED then
+        return
+    end
+
     if not WEBHOOK_URLS or #WEBHOOK_URLS == 0 then return end
     if not httpRequest then return end
     if not messageText or messageText == "" then return end
@@ -792,15 +758,9 @@ local function sendDiscordChat(authorName, displayName, userId, messageText, cha
         description = messageText,
         color = embedColor,
         fields = fields,
-        footer = {
-            text = fullTs
-        },
-        image = {
-            url = avatarUrl
-        },
-        thumbnail = {
-            url = avatarUrl
-        }
+        footer = { text = fullTs },
+        image = { url = avatarUrl },
+        thumbnail = { url = avatarUrl }
     }
 
     local payload = {
@@ -860,7 +820,7 @@ local function setChatFilterEnabled(state)
 end
 
 local function createFilterUI()
-    -- bersihin isi ROOT_FRAME kecuali dekor
+    -- bersihin isi ROOT_FRAME (selain dekor kalau ada)
     for _, child in ipairs(ROOT_FRAME:GetChildren()) do
         if not child:IsA("UICorner") and not child:IsA("UIStroke") then
             child:Destroy()
@@ -1043,9 +1003,9 @@ local function hookNewChat()
             local specialDetected, newAuthor, newDisplay, detectedUserId = detectSystemSpecialFromText(text)
             if specialDetected then
                 isSpecialFlag = true
-                if newAuthor then authorName   = newAuthor end
-                if newDisplay then displayName = newDisplay end
-                if detectedUserId then userId  = detectedUserId end
+                if newAuthor then   authorName   = newAuthor   end
+                if newDisplay then  displayName  = newDisplay  end
+                if detectedUserId then userId    = detectedUserId end
             end
         else
             isSpecialFlag = isSpecialUser(userId)
@@ -1060,7 +1020,7 @@ local function hookNewChat()
         end
 
         if not shouldRelayChat(isSystem, player, isSpecialFlag, isKhusus) then
-            -- kalau filter memutus, tetap BOLEH tampil subtitle (kalau master ON)
+            -- MASTER OFF atau filter blok: subtitle tetap jalan kalau master ON
             pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
             return
         end
@@ -1068,11 +1028,7 @@ local function hookNewChat()
         pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
         sendDiscordChat(authorName, displayName, userId, text, channelName, isSystem, isSpecialFlag, isKhusus)
 
-        local tsShort = getWITATimestampString and getWITATimestampString() or getWITAClockString()
-        if not tsShort or tsShort == "" then
-            tsShort = getWITAClockString()
-        end
-
+        local tsShort = getWITAClockString()
         local shinyPrefix = isSpecialFlag and (SPECIAL_LABEL .. " ") or ""
 
         local line = string.format("[%s] [%s] %s%s (%s/%d): %s",
@@ -1215,7 +1171,7 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
 
     print(string.format("[Axa Chat Relay][STT] %s (%d) @ %s: %s", authorName, userId, channelName, transcribedText))
 
-    -- Subtitle: tetap mengikuti master + filter nearby
+    -- Subtitle (ikut master + filter nearby)
     pushSubtitleMessage(
         channelName,
         displayName,
@@ -1228,7 +1184,7 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
         speakerPlayer
     )
 
-    -- Filter untuk Discord + History (ikut MASTER)
+    -- Filter untuk Discord + History (ikut MASTER + filter)
     if not shouldRelayChat(isSystem, speakerPlayer, isSpecialFlag, isKhusus) then
         return
     end
@@ -1244,11 +1200,7 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
         isKhusus
     )
 
-    local tsShort = getWITATimestampString and getWITATimestampString() or getWITAClockString()
-    if not tsShort or tsShort == "" then
-        tsShort = getWITAClockString()
-    end
-
+    local tsShort = getWITAClockString()
     local shinyPrefix = isSpecialFlag and (SPECIAL_LABEL .. " ") or ""
 
     local line = string.format(
@@ -1298,10 +1250,10 @@ local function setupSTTRemotes()
     end)
 end
 
--- Global function (queue-safe)
+-- Ekspos global (queue-safe)
 _G.AxaChatRelay_ReceiveSTT = relaySTTMessage
 
--- Replay queue STT kalau sudah ada sebelum script ini siap
+-- Replay queue STT kalau ada sebelum script siap
 if STT_QUEUE and #STT_QUEUE > 0 then
     for _, args in ipairs(STT_QUEUE) do
         local ok, err = pcall(function()
@@ -1320,9 +1272,8 @@ end
 --  START
 ------------------------------------------------
 local function startChatRelay()
-    -- UI dalam TAB
     createFilterUI()
-    createSubtitleUI() -- panel 3 baris
+    createSubtitleUI()
     setupSTTRemotes()
 
     local version = TextChatService.ChatVersion
@@ -1348,4 +1299,4 @@ local okBind = pcall(function()
         pcall(sendHistoryFile)
     end)
 end)
--- best-effort saja
+-- best-effort
