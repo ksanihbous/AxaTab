@@ -242,14 +242,14 @@ _G.Axa_StopSpectate    = stopSpectate
 -- SPECTATE MODE HELPERS
 ------------------------------------------------
 
--- Mode lama: kamera scriptable di belakang target (dipakai tombol "Spectate" di row)
+-- Mode lama: kamera scriptable di belakang target (dipakai tombol "SPECT POV" di row)
 local function startCustomSpectate(plr)
     disconnectRespawn()
     currentSpectateTarget = plr
     spectateMode          = "custom"
 
     if plr then
-        setSpectateStatus("Spectate → " .. (plr.DisplayName or plr.Name))
+        setSpectateStatus("Spect POV → " .. (plr.DisplayName or plr.Name))
     else
         setSpectateStatus("Idle")
     end
@@ -356,16 +356,19 @@ local function setESPOnTarget(plr, enabled)
     end
 end
 
+-- TP tanpa offset: pas 0 di titik HumanoidRootPart target
 local function teleportToPlayer(target)
     if not target then return end
 
     local tChar = target.Character
     local char  = player.Character or player.CharacterAdded:Wait()
-    local hrp   = char:FindFirstChild("HumanoidRootPart")
+    local hrp   = char and char:FindFirstChild("HumanoidRootPart")
     local thrp  = tChar and tChar:FindFirstChild("HumanoidRootPart")
 
     if hrp and thrp then
-        hrp.CFrame = thrp.CFrame * CFrame.new(0, 0, -3)
+        -- Dulu: thrp.CFrame * CFrame.new(0, 0, -3)
+        -- Sekarang: pas di posisi & orientasi target (0 offset)
+        hrp.CFrame = thrp.CFrame
     end
 end
 
@@ -431,7 +434,7 @@ local function buildRow(plr)
 
     local content = Instance.new("Frame")
     content.Name = "Content"
-    content.Size = UDim2.new(0, 420, 1, 0) -- sementara, di-set ulang setelah tombol dibuat
+    content.Size = UDim2.new(0, 420, 1, 0) -- akan diset ulang sesuai lastRight
     content.BackgroundTransparency = 1
     content.BorderSizePixel = 0
     content.Parent = hScroll
@@ -448,10 +451,11 @@ local function buildRow(plr)
     nameLabel.Text = string.format("%s (@%s)", plr.DisplayName or plr.Name, plr.Name)
     nameLabel.Parent = content
 
-    -- Urutan tombol: ESP | Spectate | SPECT FREE | TP
-    local baseX   = 190
-    local btnW    = 60
-    local spacing = 4
+    -- Urutan tombol: ESP | SPECT POV | SPECT FREE | TP
+    -- Dirapatkan: spacing diperkecil, width sedikit disusutkan
+    local baseX   = 185
+    local btnW    = 56
+    local spacing = 2
 
     local espBtn = Instance.new("TextButton")
     espBtn.Name = "ESPBtn"
@@ -470,12 +474,12 @@ local function buildRow(plr)
 
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
-    spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 24)
+    spectateBtn.Size = UDim2.new(0, btnW + 8, 0, 24)
     spectateBtn.Position = UDim2.new(0, baseX + btnW + spacing, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
-    spectateBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
+    spectateBtn.TextColor3 = Color3.fromRGB(40, 60, 120)
     spectateBtn.Text = "SPECT POV"
     spectateBtn.Parent = content
 
@@ -485,8 +489,8 @@ local function buildRow(plr)
 
     local spectFreeBtn = Instance.new("TextButton")
     spectFreeBtn.Name = "SpectFreeBtn"
-    spectFreeBtn.Size = UDim2.new(0, btnW + 12, 0, 24)
-    spectFreeBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 2 + 4, 0.5, -12)
+    spectFreeBtn.Size = UDim2.new(0, btnW + 14, 0, 24)
+    spectFreeBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 2 + 8, 0.5, -12)
     spectFreeBtn.BackgroundColor3 = Color3.fromRGB(210, 220, 255)
     spectFreeBtn.Font = Enum.Font.GothamBold
     spectFreeBtn.TextSize = 12
@@ -501,7 +505,7 @@ local function buildRow(plr)
     local tpBtn = Instance.new("TextButton")
     tpBtn.Name = "TPBtn"
     tpBtn.Size = UDim2.new(0, btnW, 0, 24)
-    tpBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 3 + 40, 0.5, -12)
+    tpBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 3 + 18, 0.5, -12)
     tpBtn.BackgroundColor3 = Color3.fromRGB(210, 240, 220)
     tpBtn.Font = Enum.Font.GothamBold
     tpBtn.TextSize = 12
