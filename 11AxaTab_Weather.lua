@@ -354,7 +354,7 @@ local function resetAll()
 end
 
 --==========================================================
---  PRESETS (copied dari script Weather-mu)
+--  PRESETS (sama seperti script-mu, tidak diubah)
 --==========================================================
 local PRESETS = {
 	["Clear Day"] = {
@@ -881,7 +881,7 @@ local PRESETS = {
 	},
 }
 
------------------ UI BUILD (4 kolom horizontal) -----------------
+----------------- UI BUILD (4 kolom, semua muncul) -----------------
 local Body = Instance.new("Frame")
 Body.Name = "AxaWeatherBody"
 Body.BackgroundTransparency = 1
@@ -895,7 +895,7 @@ pad.PaddingBottom = UDim.new(0, 8)
 pad.PaddingLeft   = UDim.new(0, 12)
 pad.PaddingRight  = UDim.new(0, 12)
 
--- top bar
+-- Top bar
 local TopRow = Instance.new("Frame")
 TopRow.Name = "TopRow"
 TopRow.BackgroundTransparency = 1
@@ -971,7 +971,8 @@ ListFrame.Position = UDim2.new(0, 0, 0, 40)
 ListFrame.Size = UDim2.new(1, 0, 1, -40)
 ListFrame.ScrollBarThickness = 6
 ListFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-ListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListFrame.AutomaticCanvasSize = Enum.AutomaticSize.None -- kita atur manual
+ListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 ListFrame.Parent = Body
 
 local ListPadding = Instance.new("UIPadding")
@@ -986,7 +987,15 @@ GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
 GridLayout.FillDirection = Enum.FillDirection.Horizontal
 GridLayout.FillDirectionMaxCells = 4 -- 4 tombol per baris
 GridLayout.CellPadding = UDim2.fromOffset(6, 6)
-GridLayout.CellSize = UDim2.new(0.25, -8, 0, 30)
+GridLayout.CellSize = UDim2.new(0.25, -10, 0, 30) -- sedikit minus biar nggak kepotong
+GridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+GridLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+
+-- update CanvasSize supaya semua baris bisa discroll (muncul semua)
+GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	local contentSize = GridLayout.AbsoluteContentSize
+	ListFrame.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 8)
+end)
 
 ----------------- HD MODE -----------------
 local isHD = false
@@ -1117,6 +1126,7 @@ local function createPresetButton(name, order)
 	btn.AutoButtonColor = false
 	btn.Font = Enum.Font.GothamSemibold
 	btn.TextSize = 12
+	btn.TextWrapped = true
 	btn.Text = name
 	btn.TextColor3 = Color3.fromRGB(230, 230, 240)
 	btn.Parent = ListFrame
@@ -1183,8 +1193,7 @@ visualGuard(true)
 
 --==========================================================
 -- Selesai:
--- - UI ngikut CORE: TAB_FRAME
--- - Tombol preset 4 kolom horizontal + scroll ke bawah
--- - HD & Reset jalan
--- - Tween aman (nggak ngetween bool/Enum, nggak spam error)
+-- - Tombol preset di-grid 4 kolom, semua bisa di-scroll ke bawah
+-- - HD & Reset tetap jalan
+-- - Efek sama seperti script-mu, cuma layout dibikin rapi & pasti muncul semua
 --==========================================================
