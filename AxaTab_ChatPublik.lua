@@ -5,10 +5,10 @@
 --    - Relay Public Chat + System Info → Discord Webhook
 --    - SPECIAL user (ID + friend koneksi) dengan warna & mention
 --    - Filter Chat (All/System/Special/System Special/Chat Khusus)
+--    - Master toggle "Chat Filter: ON/OFF"
 --    - Subtitle Panel (1–3 pesan terakhir)
 --    - History file: historychat.txt (multi-part upload)
 --    - STT hook (_G + RemoteEvent + BindableEvent)
---    - Checkbox filter masuk ke header TAB (di dalam TAB_FRAME CORE)
 --==========================================================
 
 ------------------- SERVICES -------------------
@@ -50,6 +50,9 @@ local FILTER_SYSTEMINFO_SPECIAL = true   -- system/info yang terkait SPECIAL use
 local FILTER_CHAT_KHUSUS        = false  -- system info khusus Mirethos/Kaelvorn
 local NEARBY_CAPTION_ONLY       = false  -- subtitle hanya player terdekat
 local NEARBY_MAX_DISTANCE       = 17     -- studs (≈ 5–6 meter)
+
+-- Master switch untuk filter (bukan matiin relay, cuma matiin efek checkbox filter)
+local CHAT_FILTER_ENABLED       = true
 
 ------------------- CONFIG HISTORY FILE -------------------
 local HISTORY_ENABLED      = true
@@ -548,15 +551,32 @@ end
 local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
     isKhusus = isKhusus and true or false
 
+    -- Base gate (bukan dari UI filter)
+    if isSystem then
+        if not LOG_SYSTEM_MESSAGE then
+            return false
+        end
+    else
+        if player then
+            if player == LOCAL_PLAYER then
+                if not LOG_LOCAL_PLAYER then return false end
+            else
+                if not LOG_OTHER_PLAYERS then return false end
+            end
+        end
+    end
+
+    -- Kalau master filter dimatikan → semua lewat (abaikan checkbox filter)
+    if not CHAT_FILTER_ENABLED then
+        return true
+    end
+
+    -- Di bawah ini baru filter dari UI (checkbox)
     if isKhusus and not FILTER_CHAT_KHUSUS then
         return false
     end
 
     if isSystem then
-        if not LOG_SYSTEM_MESSAGE then
-            return false
-        end
-
         if isSpecial then
             if not FILTER_SYSTEMINFO_SPECIAL then
                 return false
@@ -566,16 +586,7 @@ local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
                 return false
             end
         end
-
         return true
-    end
-
-    if player then
-        if player == LOCAL_PLAYER then
-            if not LOG_LOCAL_PLAYER then return false end
-        else
-            if not LOG_OTHER_PLAYERS then return false end
-        end
     end
 
     if isSpecial then
@@ -784,7 +795,7 @@ local function createHeaderFilterUI()
     headerFrame.Name = "ChatPublikHeader"
     headerFrame.Parent = ROOT_FRAME
     headerFrame.BackgroundTransparency = 1
-    headerFrame.Size = UDim2.new(1, -16, 0, 80)
+    headerFrame.Size = UDim2.new(1, -16, 0, 120)
     headerFrame.Position = UDim2.new(0, 8, 0, 8)
 
     local titleLabel = Instance.new("TextLabel")
@@ -792,43 +803,96 @@ local function createHeaderFilterUI()
     titleLabel.Parent = headerFrame
     titleLabel.BackgroundTransparency = 1
     titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.Size = UDim2.new(1, 0, 0, 24)
+    titleLabel.Size = UDim2.new(1, -140, 0, 22)
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.TextSize = 16
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.TextColor3 = Color3.fromRGB(235, 235, 245)
-    titleLabel.Text = "CHAT PUBLIK  •  Filter Chat"
+    titleLabel.Text = "CHAT PUBLIK  •  Chat Filter"
+
+    -- Master toggle
+    local masterToggle
+    local checkButtons = {}
+
+    local function refreshMaster()
+        if not masterToggle then return end
+        if CHAT_FILTER_ENABLED then
+            masterToggle.Text = "Chat Filter: ON"
+            masterToggle.BackgroundColor3 = Color3.fromRGB(80, 160, 255)
+            masterToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            masterToggle.Text = "Chat Filter: OFF"
+            masterToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
+            masterToggle.TextColor3 = Color3.fromRGB(205, 205, 215)
+        end
+
+        for _, btn in ipairs(checkButtons) do
+            if CHAT_FILTER_ENABLED then
+                btn.AutoButtonColor = true
+                btn.BackgroundTransparency = 0.15
+                btn.TextTransparency = 0
+            else
+                btn.AutoButtonColor = false
+                btn.BackgroundTransparency = 0.35
+                btn.TextTransparency = 0.3
+            end
+        end
+    end
+
+    masterToggle = Instance.new("TextButton")
+    masterToggle.Name = "MasterToggle"
+    masterToggle.Parent = headerFrame
+    masterToggle.AnchorPoint = Vector2.new(1, 0)
+    masterToggle.Position = UDim2.new(1, 0, 0, 0)
+    masterToggle.Size = UDim2.new(0, 130, 0, 22)
+    masterToggle.BackgroundColor3 = Color3.fromRGB(80, 160, 255)
+    masterToggle.BorderSizePixel = 0
+    masterToggle.AutoButtonColor = true
+    masterToggle.Font = Enum.Font.GothamBold
+    masterToggle.TextSize = 12
+    masterToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    masterToggle.Text = "Chat Filter: ON"
+
+    local mtCorner = Instance.new("UICorner")
+    mtCorner.CornerRadius = UDim.new(0, 8)
+    mtCorner.Parent = masterToggle
+
+    masterToggle.MouseButton1Click:Connect(function()
+        CHAT_FILTER_ENABLED = not CHAT_FILTER_ENABLED
+        refreshMaster()
+    end)
 
     local descLabel = Instance.new("TextLabel")
     descLabel.Name = "Desc"
     descLabel.Parent = headerFrame
     descLabel.BackgroundTransparency = 1
-    descLabel.Position = UDim2.new(0, 0, 0, 22)
+    descLabel.Position = UDim2.new(0, 0, 0, 24)
     descLabel.Size = UDim2.new(1, 0, 0, 18)
     descLabel.Font = Enum.Font.Gotham
     descLabel.TextSize = 12
     descLabel.TextXAlignment = Enum.TextXAlignment.Left
     descLabel.TextColor3 = Color3.fromRGB(180, 180, 195)
-    descLabel.Text = "Webhook + History + Subtitle • Checkbox ini realtime mem-filter apa saja yang dikirim."
+    descLabel.Text = "Webhook + History + Subtitle • Checkbox hanya aktif kalau Chat Filter: ON"
 
-    local filterRow = Instance.new("Frame")
-    filterRow.Name = "FilterRow"
-    filterRow.Parent = headerFrame
-    filterRow.BackgroundTransparency = 1
-    filterRow.Position = UDim2.new(0, 0, 0, 42)
-    filterRow.Size = UDim2.new(1, 0, 0, 34)
+    local filterList = Instance.new("Frame")
+    filterList.Name = "FilterList"
+    filterList.Parent = headerFrame
+    filterList.BackgroundTransparency = 1
+    filterList.Position = UDim2.new(0, 0, 0, 46)
+    filterList.Size = UDim2.new(1, 0, 0, 70)
 
-    local layout = Instance.new("UIListLayout")
-    layout.Parent = filterRow
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.Padding = UDim.new(0, 6)
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Parent = filterList
+    listLayout.FillDirection = Enum.FillDirection.Vertical
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    listLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 4)
 
     local function makeCheck(label, initial, onToggle)
         local btn = Instance.new("TextButton")
-        btn.Parent = filterRow
-        btn.Size = UDim2.new(0, 180, 0, 22)
+        btn.Parent = filterList
+        btn.Size = UDim2.new(1, 0, 0, 22)
         btn.BackgroundColor3 = Color3.fromRGB(35, 35, 46)
         btn.BorderSizePixel = 0
         btn.AutoButtonColor = true
@@ -857,6 +921,7 @@ local function createHeaderFilterUI()
         end)
 
         refresh()
+        table.insert(checkButtons, btn)
         return btn
     end
 
@@ -889,6 +954,8 @@ local function createHeaderFilterUI()
     makeCheck("Subtitle hanya player terdekat", NEARBY_CAPTION_ONLY, function(state)
         NEARBY_CAPTION_ONLY = state
     end)
+
+    refreshMaster()
 end
 
 ------------------------------------------------
@@ -1221,7 +1288,7 @@ local function startChatRelay()
     print("[Axa Chat Relay] Aktif: relay chat → Discord webhook + history file + SPECIAL shiny ✨"
         .. " + avatar thumbnail 420x420 + per-user Special Mention (+ fallback Axa)"
         .. " + Chat Khusus Mirethos/Kaelvorn (pink)"
-        .. " + UI Filter Chat di header TAB"
+        .. " + UI Filter Chat di header TAB + Master Chat Filter ON/OFF"
         .. " + Subtitle Panel (1–3 pesan terakhir)"
         .. " + STT hook (_G + RemoteEvent + BindableEvent).")
 end
