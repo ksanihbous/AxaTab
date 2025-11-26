@@ -1,61 +1,111 @@
 --==========================================================
 --  AxaTab_ChatPublik.lua
---  Dipanggil via AxaHub CORE (loadstring + env TAB_FRAME)
+--  TAB "CHAT PUBLIK" untuk AxaHub CORE
+--  - Relay chat publik + system ke Discord + history file
+--  - Subtitle 1–3 baris di bawah layar
+--  - Filter via checkbox + master toggle "Chat Filter: ON/OFF"
 --==========================================================
 
-------------------- SERVICES -------------------
-local Players            = game:GetService("Players")
-local HttpService        = game:GetService("HttpService")
-local TextChatService    = game:GetService("TextChatService")
-local MarketplaceService = game:GetService("MarketplaceService")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+------------------------------------------------
+--  ENV DARI CORE (fallback kalau standalone)
+------------------------------------------------
+local Players              = Players              or game:GetService("Players")
+local HttpService          = HttpService          or game:GetService("HttpService")
+local TextChatService      = TextChatService      or game:GetService("TextChatService")
+local MarketplaceService   = MarketplaceService   or game:GetService("MarketplaceService")
+local ReplicatedStorage    = ReplicatedStorage    or game:GetService("ReplicatedStorage")
 
-local LOCAL_PLAYER = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+local playerGui
 
--- Pastikan TAB_FRAME ada (env dari CORE)
-local ROOT_FRAME = TAB_FRAME or CONTENT_HOLDER or nil
+pcall(function()
+    playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+end)
 
-------------------- STT QUEUE (GLOBAL) -------------------
-_G.AxaChatRelay_STTQueue = _G.AxaChatRelay_STTQueue or {}
-local STT_QUEUE = _G.AxaChatRelay_STTQueue
+-- ROOT TAB (dari CORE) / fallback standalone
+local ROOT_FRAME = TAB_FRAME
+if not ROOT_FRAME then
+    -- fallback kalau dijalankan tanpa CORE
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "AxaTab_ChatPublik_Standalone"
+    sg.IgnoreGuiInset = true
+    sg.ResetOnSpawn = false
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    sg.Parent = playerGui or game:GetService("CoreGui")
 
-------------------- CONFIG DISCORD -------------------
+    local f = Instance.new("Frame")
+    f.Name = "ChatPublikRoot"
+    f.Size = UDim2.new(0, 480, 0, 260)
+    f.AnchorPoint = Vector2.new(0.5, 0.5)
+    f.Position = UDim2.new(0.5, 0, 0.5, 0)
+    f.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
+    f.Parent = sg
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 12)
+    c.Parent = f
+
+    ROOT_FRAME = f
+end
+
+------------------------------------------------
+--  CONFIG DISCORD
+------------------------------------------------
 local WEBHOOK_URLS = {
     "https://discord.com/api/webhooks/1440379761389080597/yRL_Ek5RSttD-cMVPE6f0VtfpuRdMcVOjq4IkqtFOycPKjwFCiojViQGwXd_7AqXRM2P", -- utama
-    --"https://discord.com/api/webhooks/....", -- tambahan kalau mau
 }
 
 local BOT_USERNAME = "AxaXyz - Chat Relay"
 local BOT_AVATAR   = "https://mylogo.edgeone.app/Logo%20Ax%20(NO%20BG).png"
 
-------------------- CONFIG FILTER CHAT (BASE) -------------------
+------------------------------------------------
+--  STT QUEUE / GLOBAL
+------------------------------------------------
+_G.AxaChatRelay_STTQueue = _G.AxaChatRelay_STTQueue or {}
+local STT_QUEUE = _G.AxaChatRelay_STTQueue
+
+local function earlyEnqueueSTT(...)
+    table.insert(STT_QUEUE, {...})
+end
+
+if type(_G.AxaChatRelay_ReceiveSTT) ~= "function" then
+    _G.AxaChatRelay_ReceiveSTT = earlyEnqueueSTT
+end
+
+------------------------------------------------
+--  CONFIG FILTER & MASTER TOGGLE
+------------------------------------------------
+-- BASE
 local LOG_SYSTEM_MESSAGE  = true
 local LOG_LOCAL_PLAYER    = true
 local LOG_OTHER_PLAYERS   = true
 
-------------------- CONFIG FILTER CHAT (UI RUNTIME) -------------------
--- Nilai awal (akan diubah lewat checkbox header)
+-- MASTER SWITCH: kalau false -> TIDAK ADA relay / subtitle
+local CHAT_FILTER_ENABLED = true
+
+-- UI RUNTIME FILTER (checkbox)
 local FILTER_ALLCHAT            = true   -- chat player biasa (non-special)
 local FILTER_SYSTEMINFO         = true   -- system/info umum
 local FILTER_SPECIALCHAT        = true   -- chat dari SPECIAL user
 local FILTER_SYSTEMINFO_SPECIAL = true   -- system/info yang terkait SPECIAL userId/koneksi
-local FILTER_CHAT_KHUSUS        = false  -- system info khusus Mirethos/Kaelvorn
-local NEARBY_CAPTION_ONLY       = false  -- subtitle hanya player terdekat
-local NEARBY_MAX_DISTANCE       = 17     -- studs (≈ 5–6 meter)
+local FILTER_CHAT_KHUSUS        = false  -- system info khusus Mirethos/Kaelvorn oleh SPECIAL_USERS
 
--- Master switch untuk filter:
---  - FALSE  → checkbox diabaikan + subtitle 3 baris dimatikan
---  - TRUE   → checkbox berlaku + subtitle aktif
-local CHAT_FILTER_ENABLED       = true
+-- Subtitle hanya player terdekat
+local NEARBY_CAPTION_ONLY = false
+local NEARBY_MAX_DISTANCE = 17 -- studs
 
-------------------- CONFIG HISTORY FILE -------------------
+------------------------------------------------
+--  CONFIG HISTORY FILE
+------------------------------------------------
 local HISTORY_ENABLED      = true
 local HISTORY_FILENAME     = "historychat.txt"
 local HISTORY_MAX_LINES    = 90
 local HISTORY_MAX_CHARS    = 6000
-local HISTORY_SEND_ON_EACH = false   -- batch besar → baru kirim
+local HISTORY_SEND_ON_EACH = false
 
-------------------- CONFIG SPECIAL PUBLIC CHAT -------------------
+------------------------------------------------
+--  CONFIG SPECIAL PUBLIC CHAT
+------------------------------------------------
 local SPECIAL_USERS = {
     [8662842080] = {
         username = "@Fairymeyyy",
@@ -104,7 +154,7 @@ local SPECIAL_USERS = {
     },
 }
 
-local SPECIAL_USER_IDS   = {}
+local SPECIAL_USER_IDS = {}
 local SPECIAL_DISCORD_MAP = {}
 
 for userId, info in pairs(SPECIAL_USERS) do
@@ -140,10 +190,10 @@ local function isSpecialUser(userId)
 end
 
 local function updateConnectionSpecial(p)
-    if not p or not p.UserId or p == LOCAL_PLAYER then return end
+    if not p or not p.UserId or p == LocalPlayer then return end
 
     local ok, isFriend = pcall(function()
-        return LOCAL_PLAYER:IsFriendsWith(p.UserId)
+        return LocalPlayer:IsFriendsWith(p.UserId)
     end)
 
     if ok and isFriend then
@@ -160,7 +210,9 @@ Players.PlayerAdded:Connect(function(plr)
     updateConnectionSpecial(plr)
 end)
 
-------------------- CONFIG WITA -------------------
+------------------------------------------------
+--  CONFIG WITA
+------------------------------------------------
 local WITA_OFFSET_SECONDS = 8 * 60 * 60
 
 local MONTH_NAMES_ID = {
@@ -230,13 +282,16 @@ local function detectHttpRequest()
     end
 
     if not req then
-        warn("[Axa Chat Relay] Executor TIDAK support http_request/syn.request/http.request, webhook tidak bisa dikirim. (UI & subtitle tetap jalan)")
+        warn("[Axa Chat Relay] Executor TIDAK support http_request/syn.request/http.request, webhook tidak bisa dikirim.")
     end
 
     return req
 end
 
 local httpRequest = detectHttpRequest()
+if not httpRequest then
+    -- kalau executor nggak support HTTP, tetap jalanin subtitle & filter lokal
+end
 
 ------------------------------------------------
 --  INFO SERVER
@@ -378,25 +433,25 @@ local function addHistoryLine(line)
 end
 
 ------------------------------------------------
---  SUBTITLE PANEL (ScreenGui terpisah)
+--  SUBTITLE PANEL (3 baris terakhir)
 ------------------------------------------------
 local subtitleGui
 local subtitleFrame
 local subtitleLines = {}
 
 local function createSubtitleUI()
-    if subtitleGui and subtitleGui.Parent then
+    if subtitleFrame and subtitleFrame.Parent then
         return
     end
 
-    local playerGui = LOCAL_PLAYER:FindFirstChildOfClass("PlayerGui") or LOCAL_PLAYER:WaitForChild("PlayerGui")
+    local pg = playerGui or LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
 
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "AxaSubtitleUI"
     screenGui.ResetOnSpawn = false
     screenGui.IgnoreGuiInset = true
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.Parent = playerGui
+    screenGui.Parent = pg
 
     subtitleGui = screenGui
 
@@ -465,17 +520,16 @@ local function updateSubtitleUI()
         label.Text = text
     end
 
-    -- Kalau Chat Filter OFF → paksa sembunyikan subtitle 3 baris
-    frame.Visible = CHAT_FILTER_ENABLED and (#subtitleLines > 0) or false
+    -- MASTER GATE: kalau Chat Filter OFF -> subtitle disembunyikan
+    frame.Visible = CHAT_FILTER_ENABLED and (#subtitleLines > 0)
 end
 
 local function pushSubtitleLine(text)
-    if not text or text == "" then return end
-    -- Kalau Chat Filter OFF → tidak nambah subtitle sama sekali
     if not CHAT_FILTER_ENABLED then
+        -- Kalau master filter OFF, subtitle sama sekali tidak ditampilkan
         return
     end
-
+    if not text or text == "" then return end
     table.insert(subtitleLines, text)
     if #subtitleLines > 3 then
         table.remove(subtitleLines, 1)
@@ -484,16 +538,15 @@ local function pushSubtitleLine(text)
 end
 
 local function pushSubtitleMessage(channelName, displayName, authorName, messageText, isSystem, isSpecial, isPrivate, isKhusus, speakerPlayer)
-    if not messageText or messageText == "" then return end
-
-    -- Subtitle full ikut master filter
     if not CHAT_FILTER_ENABLED then
+        -- Master OFF -> jangan tampilkan subtitle sama sekali
         return
     end
+    if not messageText or messageText == "" then return end
 
-    if NEARBY_CAPTION_ONLY and speakerPlayer and speakerPlayer ~= LOCAL_PLAYER then
+    if NEARBY_CAPTION_ONLY and speakerPlayer and speakerPlayer ~= LocalPlayer then
         local char   = speakerPlayer.Character
-        local myChar = LOCAL_PLAYER.Character
+        local myChar = LocalPlayer.Character
         if char and myChar then
             local hrp   = char:FindFirstChild("HumanoidRootPart")
             local myHrp = myChar:FindFirstChild("HumanoidRootPart")
@@ -551,39 +604,25 @@ local function detectSystemSpecialFromText(text)
 end
 
 ------------------------------------------------
---  FILTER LOGIC
+--  FILTER LOGIC (dengan MASTER GATE)
 ------------------------------------------------
 local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
+    -- MASTER: kalau OFF, semua relay ke Discord & history DIMATIKAN
+    if not CHAT_FILTER_ENABLED then
+        return false
+    end
+
     isKhusus = isKhusus and true or false
 
-    -- Base gate (bukan dari UI filter)
-    if isSystem then
-        if not LOG_SYSTEM_MESSAGE then
-            return false
-        end
-    else
-        if player then
-            if player == LOCAL_PLAYER then
-                if not LOG_LOCAL_PLAYER then return false end
-            else
-                if not LOG_OTHER_PLAYERS then return false end
-            end
-        end
-    end
-
-    -- Kalau master filter dimatikan:
-    --  - subtitle sudah dimatiin di pushSubtitleMessage
-    --  - di sini, semua chat tetap dilepas ke Discord + history
-    if not CHAT_FILTER_ENABLED then
-        return true
-    end
-
-    -- Di bawah ini baru filter dari UI (checkbox)
     if isKhusus and not FILTER_CHAT_KHUSUS then
         return false
     end
 
     if isSystem then
+        if not LOG_SYSTEM_MESSAGE then
+            return false
+        end
+
         if isSpecial then
             if not FILTER_SYSTEMINFO_SPECIAL then
                 return false
@@ -593,7 +632,16 @@ local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
                 return false
             end
         end
+
         return true
+    end
+
+    if player then
+        if player == LocalPlayer then
+            if not LOG_LOCAL_PLAYER then return false end
+        else
+            if not LOG_OTHER_PLAYERS then return false end
+        end
     end
 
     if isSpecial then
@@ -783,207 +831,169 @@ local function sendDiscordChat(authorName, displayName, userId, messageText, cha
 end
 
 ------------------------------------------------
---  UI: HEADER CHECKBOX DALAM CORE TAB
+--  UI DALAM TAB: HEADER + TOGGLE + CHECKBOX
 ------------------------------------------------
-local function createHeaderFilterUI()
-    if not ROOT_FRAME then return end
+local chatFilterToggleButton
 
-    -- Styling TAB
-    ROOT_FRAME.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
-    ROOT_FRAME.BackgroundTransparency = 0
-
-    local oldHeader = ROOT_FRAME:FindFirstChild("ChatPublikHeader")
-    if oldHeader then
-        oldHeader:Destroy()
+local function updateChatFilterToggleVisual()
+    if not chatFilterToggleButton then return end
+    if CHAT_FILTER_ENABLED then
+        chatFilterToggleButton.Text = "Chat Filter: ON"
+        chatFilterToggleButton.BackgroundColor3 = Color3.fromRGB(70, 170, 90)
+        chatFilterToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        chatFilterToggleButton.Text = "Chat Filter: OFF"
+        chatFilterToggleButton.BackgroundColor3 = Color3.fromRGB(150, 70, 70)
+        chatFilterToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     end
+end
 
-    local headerFrame = Instance.new("Frame")
-    headerFrame.Name = "ChatPublikHeader"
-    headerFrame.Parent = ROOT_FRAME
-    headerFrame.BackgroundTransparency = 1
-    headerFrame.Size = UDim2.new(1, -16, 0, 120)
-    headerFrame.Position = UDim2.new(0, 8, 0, 8)
+local function setChatFilterEnabled(state)
+    CHAT_FILTER_ENABLED = state and true or false
+    updateChatFilterToggleVisual()
 
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "Title"
-    titleLabel.Parent = headerFrame
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Position = UDim2.new(0, 0, 0, 0)
-    titleLabel.Size = UDim2.new(1, -140, 0, 22)
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextSize = 16
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.TextColor3 = Color3.fromRGB(235, 235, 245)
-    titleLabel.Text = "CHAT PUBLIK  •  Chat Filter"
+    if not CHAT_FILTER_ENABLED then
+        -- bersihkan subtitle saat dimatikan
+        subtitleLines = {}
+        updateSubtitleUI()
+    end
+end
 
-    local masterToggle
-    local checkButtons = {}
-
-    local function refreshMaster()
-        if not masterToggle then return end
-        if CHAT_FILTER_ENABLED then
-            masterToggle.Text = "Chat Filter: ON"
-            masterToggle.BackgroundColor3 = Color3.fromRGB(80, 160, 255)
-            masterToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        else
-            masterToggle.Text = "Chat Filter: OFF"
-            masterToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
-            masterToggle.TextColor3 = Color3.fromRGB(205, 205, 215)
-        end
-
-        for _, btn in ipairs(checkButtons) do
-            if CHAT_FILTER_ENABLED then
-                btn.AutoButtonColor = true
-                btn.BackgroundTransparency = 0.15
-                btn.TextTransparency = 0
-            else
-                btn.AutoButtonColor = false
-                btn.BackgroundTransparency = 0.35
-                btn.TextTransparency = 0.3
-            end
-        end
-
-        -- Sinkron dengan subtitle panel: OFF → sembunyi total
-        if subtitleFrame then
-            if CHAT_FILTER_ENABLED and #subtitleLines > 0 then
-                subtitleFrame.Visible = true
-            else
-                subtitleFrame.Visible = false
-            end
+local function createFilterUI()
+    -- bersihin isi ROOT_FRAME kecuali dekor
+    for _, child in ipairs(ROOT_FRAME:GetChildren()) do
+        if not child:IsA("UICorner") and not child:IsA("UIStroke") then
+            child:Destroy()
         end
     end
 
-    masterToggle = Instance.new("TextButton")
-    masterToggle.Name = "MasterToggle"
-    masterToggle.Parent = headerFrame
-    masterToggle.AnchorPoint = Vector2.new(1, 0)
-    masterToggle.Position = UDim2.new(1, 0, 0, 0)
-    masterToggle.Size = UDim2.new(0, 130, 0, 22)
-    masterToggle.BackgroundColor3 = Color3.fromRGB(80, 160, 255)
-    masterToggle.BorderSizePixel = 0
-    masterToggle.AutoButtonColor = true
-    masterToggle.Font = Enum.Font.GothamBold
-    masterToggle.TextSize = 12
-    masterToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    masterToggle.Text = "Chat Filter: ON"
+    ROOT_FRAME.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
 
-    local mtCorner = Instance.new("UICorner")
-    mtCorner.CornerRadius = UDim.new(0, 8)
-    mtCorner.Parent = masterToggle
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Size = UDim2.new(1, -10, 0, 32)
+    header.Position = UDim2.new(0, 5, 0, 5)
+    header.BackgroundTransparency = 1
+    header.Parent = ROOT_FRAME
 
-    masterToggle.MouseButton1Click:Connect(function()
-        CHAT_FILTER_ENABLED = not CHAT_FILTER_ENABLED
-        refreshMaster()
-        -- kalau OFF, kita juga kosongin teks di layar (opsional, tapi aman)
-        if not CHAT_FILTER_ENABLED then
-            subtitleLines = {}
-            if subtitleFrame then
-                for _, child in ipairs(subtitleFrame:GetChildren()) do
-                    if child:IsA("TextLabel") then
-                        child:Destroy()
-                    end
-                end
-                subtitleFrame.Visible = false
-            end
-        else
-            updateSubtitleUI()
-        end
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -140, 1, 0)
+    title.Position = UDim2.new(0, 0, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 15
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextColor3 = Color3.fromRGB(40, 40, 60)
+    title.Text = "💬 CHAT PUBLIK + Discord Relay"
+    title.Parent = header
+
+    chatFilterToggleButton = Instance.new("TextButton")
+    chatFilterToggleButton.Name = "ChatFilterToggle"
+    chatFilterToggleButton.AnchorPoint = Vector2.new(1, 0.5)
+    chatFilterToggleButton.Position = UDim2.new(1, -2, 0.5, 0)
+    chatFilterToggleButton.Size = UDim2.new(0, 130, 0, 24)
+    chatFilterToggleButton.AutoButtonColor = true
+    chatFilterToggleButton.Font = Enum.Font.GothamBold
+    chatFilterToggleButton.TextSize = 12
+    chatFilterToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    chatFilterToggleButton.BackgroundColor3 = Color3.fromRGB(70, 170, 90)
+    chatFilterToggleButton.Parent = header
+
+    local cftCorner = Instance.new("UICorner")
+    cftCorner.CornerRadius = UDim.new(0, 8)
+    cftCorner.Parent = chatFilterToggleButton
+
+    chatFilterToggleButton.MouseButton1Click:Connect(function()
+        setChatFilterEnabled(not CHAT_FILTER_ENABLED)
     end)
 
-    local descLabel = Instance.new("TextLabel")
-    descLabel.Name = "Desc"
-    descLabel.Parent = headerFrame
-    descLabel.BackgroundTransparency = 1
-    descLabel.Position = UDim2.new(0, 0, 0, 24)
-    descLabel.Size = UDim2.new(1, 0, 0, 18)
-    descLabel.Font = Enum.Font.Gotham
-    descLabel.TextSize = 12
-    descLabel.TextXAlignment = Enum.TextXAlignment.Left
-    descLabel.TextColor3 = Color3.fromRGB(180, 180, 195)
-    descLabel.Text = "Webhook + History • Checkbox & Subtitle aktif hanya saat Chat Filter: ON"
+    updateChatFilterToggleVisual()
 
-    local filterList = Instance.new("Frame")
-    filterList.Name = "FilterList"
-    filterList.Parent = headerFrame
-    filterList.BackgroundTransparency = 1
-    filterList.Position = UDim2.new(0, 0, 0, 46)
-    filterList.Size = UDim2.new(1, 0, 0, 70)
+    local desc = Instance.new("TextLabel")
+    desc.Name = "Desc"
+    desc.Size = UDim2.new(1, -10, 0, 30)
+    desc.Position = UDim2.new(0, 5, 0, 40)
+    desc.BackgroundTransparency = 1
+    desc.Font = Enum.Font.Gotham
+    desc.TextSize = 12
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.TextYAlignment = Enum.TextYAlignment.Top
+    desc.TextWrapped = true
+    desc.TextColor3 = Color3.fromRGB(90, 90, 120)
+    desc.Text = "Filter chat yang akan dikirim ke Discord + history, dan ditampilkan sebagai subtitle (1–3 baris) di bawah layar."
+    desc.Parent = ROOT_FRAME
 
-    local listLayout = Instance.new("UIListLayout")
-    listLayout.Parent = filterList
-    listLayout.FillDirection = Enum.FillDirection.Vertical
-    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    listLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    listLayout.Padding = UDim.new(0, 4)
+    local filterFrame = Instance.new("Frame")
+    filterFrame.Name = "FilterFrame"
+    filterFrame.Position = UDim2.new(0, 5, 0, 72)
+    filterFrame.Size = UDim2.new(1, -10, 1, -80)
+    filterFrame.BackgroundTransparency = 1
+    filterFrame.Parent = ROOT_FRAME
 
-    local function makeCheck(label, initial, onToggle)
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 4)
+    layout.Parent = filterFrame
+
+    local function makeCheckButton(text, initial, onToggle)
         local btn = Instance.new("TextButton")
-        btn.Parent = filterList
+        btn.Parent = filterFrame
         btn.Size = UDim2.new(1, 0, 0, 22)
-        btn.BackgroundColor3 = Color3.fromRGB(35, 35, 46)
+        btn.BackgroundColor3 = Color3.fromRGB(225, 225, 235)
+        btn.BackgroundTransparency = 0
         btn.BorderSizePixel = 0
         btn.AutoButtonColor = true
         btn.Font = Enum.Font.Gotham
         btn.TextSize = 12
         btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.TextColor3 = Color3.fromRGB(230, 230, 240)
+        btn.TextColor3 = Color3.fromRGB(40, 40, 70)
 
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 6)
-        corner.Parent = btn
+        local corner2 = Instance.new("UICorner")
+        corner2.CornerRadius = UDim.new(0, 8)
+        corner2.Parent = btn
 
         local state = initial and true or false
 
         local function refresh()
             local mark = state and "✔" or " "
-            btn.Text = string.format("[%s] %s", mark, label)
+            btn.Text = string.format("[%s] %s", mark, text)
         end
 
         btn.MouseButton1Click:Connect(function()
             state = not state
             refresh()
-            if onToggle then
-                onToggle(state)
-            end
+            onToggle(state)
         end)
 
         refresh()
-        table.insert(checkButtons, btn)
         return btn
     end
 
-    -- 1. All Chat
-    makeCheck("All Chat", FILTER_ALLCHAT, function(state)
+    makeCheckButton("All Chat (chat player biasa)", FILTER_ALLCHAT, function(state)
         FILTER_ALLCHAT = state
     end)
 
-    -- 2. System Info
-    makeCheck("System Info", FILTER_SYSTEMINFO, function(state)
+    makeCheckButton("System Info (umum)", FILTER_SYSTEMINFO, function(state)
         FILTER_SYSTEMINFO = state
     end)
 
-    -- 3. Special UserID / koneksi
-    makeCheck("Special UserID / koneksi", FILTER_SPECIALCHAT, function(state)
+    makeCheckButton("Special UserID / koneksi (chat)", FILTER_SPECIALCHAT, function(state)
         FILTER_SPECIALCHAT = state
     end)
 
-    -- 4. System Info Special UserID / koneksi
-    makeCheck("System Info Special UserID / koneksi", FILTER_SYSTEMINFO_SPECIAL, function(state)
+    makeCheckButton("System Info Special UserID / koneksi", FILTER_SYSTEMINFO_SPECIAL, function(state)
         FILTER_SYSTEMINFO_SPECIAL = state
     end)
 
-    -- 5. Filter chat khusus (Mirethos / Kaelvorn)
-    makeCheck("Filter chat khusus (Mirethos / Kaelvorn)", FILTER_CHAT_KHUSUS, function(state)
+    makeCheckButton("Filter chat khusus (Mirethos / Kaelvorn)", FILTER_CHAT_KHUSUS, function(state)
         FILTER_CHAT_KHUSUS = state
     end)
 
-    -- 6. Subtitle hanya player terdekat
-    makeCheck("Subtitle hanya player terdekat", NEARBY_CAPTION_ONLY, function(state)
+    makeCheckButton("Subtitle hanya player terdekat (~17 studs)", NEARBY_CAPTION_ONLY, function(state)
         NEARBY_CAPTION_ONLY = state
     end)
-
-    refreshMaster()
 end
 
 ------------------------------------------------
@@ -1049,16 +1059,20 @@ local function hookNewChat()
             end
         end
 
-        -- Subtitle: di dalam sudah cek CHAT_FILTER_ENABLED
-        pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
-
         if not shouldRelayChat(isSystem, player, isSpecialFlag, isKhusus) then
+            -- kalau filter memutus, tetap BOLEH tampil subtitle (kalau master ON)
+            pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
             return
         end
 
+        pushSubtitleMessage(channelName, displayName, authorName, text, isSystem, isSpecialFlag, false, isKhusus, player)
         sendDiscordChat(authorName, displayName, userId, text, channelName, isSystem, isSpecialFlag, isKhusus)
 
-        local tsShort = getWITAClockString()
+        local tsShort = getWITATimestampString and getWITATimestampString() or getWITAClockString()
+        if not tsShort or tsShort == "" then
+            tsShort = getWITAClockString()
+        end
+
         local shinyPrefix = isSpecialFlag and (SPECIAL_LABEL .. " ") or ""
 
         local line = string.format("[%s] [%s] %s%s (%s/%d): %s",
@@ -1086,12 +1100,12 @@ local function hookLegacyChat()
             local isSpecialFlag = isSpecialUser(p.UserId)
             local isKhusus = false
 
-            pushSubtitleMessage("LegacyChat", p.DisplayName, p.Name, msg, isSystem, isSpecialFlag, false, isKhusus, p)
-
             if not shouldRelayChat(false, p, isSpecialFlag, isKhusus) then
+                pushSubtitleMessage("LegacyChat", p.DisplayName, p.Name, msg, isSystem, isSpecialFlag, false, isKhusus, p)
                 return
             end
 
+            pushSubtitleMessage("LegacyChat", p.DisplayName, p.Name, msg, isSystem, isSpecialFlag, false, isKhusus, p)
             sendDiscordChat(p.Name, p.DisplayName, p.UserId, msg, "LegacyChat", isSystem, isSpecialFlag, isKhusus)
 
             local timeStr = getWITAClockString()
@@ -1161,11 +1175,11 @@ local function resolveSpeakerInfo(speaker)
         end
     end
 
-    if not player and LOCAL_PLAYER then
-        player = LOCAL_PLAYER
-        userId = userId or LOCAL_PLAYER.UserId
-        authorName = authorName or LOCAL_PLAYER.Name
-        displayName = displayName or LOCAL_PLAYER.DisplayName
+    if not player and LocalPlayer then
+        player = LocalPlayer
+        userId = userId or LocalPlayer.UserId
+        authorName = authorName or LocalPlayer.Name
+        displayName = displayName or LocalPlayer.DisplayName
     end
 
     userId      = userId or 0
@@ -1201,7 +1215,7 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
 
     print(string.format("[Axa Chat Relay][STT] %s (%d) @ %s: %s", authorName, userId, channelName, transcribedText))
 
-    -- Subtitle (ikut Chat Filter master)
+    -- Subtitle: tetap mengikuti master + filter nearby
     pushSubtitleMessage(
         channelName,
         displayName,
@@ -1214,7 +1228,7 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
         speakerPlayer
     )
 
-    -- Filter untuk Discord + History
+    -- Filter untuk Discord + History (ikut MASTER)
     if not shouldRelayChat(isSystem, speakerPlayer, isSpecialFlag, isKhusus) then
         return
     end
@@ -1230,7 +1244,11 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
         isKhusus
     )
 
-    local tsShort = getWITAClockString()
+    local tsShort = getWITATimestampString and getWITATimestampString() or getWITAClockString()
+    if not tsShort or tsShort == "" then
+        tsShort = getWITAClockString()
+    end
+
     local shinyPrefix = isSpecialFlag and (SPECIAL_LABEL .. " ") or ""
 
     local line = string.format(
@@ -1246,7 +1264,6 @@ local function relaySTTMessage(speaker, transcribedText, sourceChannelName)
     addHistoryLine(line)
 end
 
--- Auto-create RemoteEvent + BindableEvent di ReplicatedStorage
 local function setupSTTRemotes()
     local folder = ReplicatedStorage:FindFirstChild(STT_REMOTE_FOLDER_NAME)
     if not folder then
@@ -1281,10 +1298,10 @@ local function setupSTTRemotes()
     end)
 end
 
--- Global function (override stub dari loader awal)
+-- Global function (queue-safe)
 _G.AxaChatRelay_ReceiveSTT = relaySTTMessage
 
--- Replay semua STT yang sudah ngantri sebelum fungsi siap
+-- Replay queue STT kalau sudah ada sebelum script ini siap
 if STT_QUEUE and #STT_QUEUE > 0 then
     for _, args in ipairs(STT_QUEUE) do
         local ok, err = pcall(function()
@@ -1303,6 +1320,11 @@ end
 --  START
 ------------------------------------------------
 local function startChatRelay()
+    -- UI dalam TAB
+    createFilterUI()
+    createSubtitleUI() -- panel 3 baris
+    setupSTTRemotes()
+
     local version = TextChatService.ChatVersion
     if version == Enum.ChatVersion.TextChatService then
         hookNewChat()
@@ -1310,16 +1332,13 @@ local function startChatRelay()
         hookLegacyChat()
     end
 
-    createSubtitleUI()
-    setupSTTRemotes()
-    createHeaderFilterUI()
-
-    print("[Axa Chat Relay] Aktif: relay chat → Discord webhook + history file + SPECIAL shiny ✨"
-        .. " + avatar thumbnail 420x420 + per-user Special Mention (+ fallback Axa)"
-        .. " + Chat Khusus Mirethos/Kaelvorn (pink)"
-        .. " + UI Filter Chat di header TAB + Master Chat Filter ON/OFF (subtitle ikut master)"
-        .. " + Subtitle Panel (1–3 pesan terakhir)"
-        .. " + STT hook (_G + RemoteEvent + BindableEvent).")
+    print("[Axa Chat Relay] Aktif di TAB CHAT PUBLIK:"
+        .. " relay chat -> Discord + history file,"
+        .. " SPECIAL shiny ✨, avatar 420x420,"
+        .. " per-user Special Mention (+ fallback Axa),"
+        .. " chat khusus Mirethos/Kaelvorn (pink),"
+        .. " UI filter + master toggle Chat Filter: ON/OFF,"
+        .. " subtitle panel 1–3 baris + STT RemoteEvent/Bindable.")
 end
 
 startChatRelay()
@@ -1329,4 +1348,4 @@ local okBind = pcall(function()
         pcall(sendHistoryFile)
     end)
 end)
--- best-effort
+-- best-effort saja
