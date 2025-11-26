@@ -232,7 +232,7 @@ local function textOf(x: Instance)
     return t
 end
 
-local function findFirstByText(root: Instance, targets)
+local function normTargets(targets)
     local want = {}
     if typeof(targets) == "string" then
         want = { string.lower(targets) }
@@ -241,7 +241,11 @@ local function findFirstByText(root: Instance, targets)
             table.insert(want, string.lower(s))
         end
     end
+    return want
+end
 
+local function findFirstByText(root: Instance, targets)
+    local want = normTargets(targets)
     for _, d in ipairs(root:GetDescendants()) do
         if (d:IsA("TextButton") or d:IsA("TextLabel") or d:IsA("ImageButton")) and isGuiVisible(d) then
             local txt = string.lower(textOf(d))
@@ -261,7 +265,7 @@ local function findAnyByTextInRoots(targets)
     end
 end
 
-local function waitForText(targets, timeout)
+local function waitForTextGlobal(targets, timeout)
     local t0 = os.clock()
     timeout = timeout or 8
     while os.clock() - t0 < timeout do
@@ -274,8 +278,22 @@ local function waitForText(targets, timeout)
     return nil
 end
 
+local function waitForTextInRoot(root: Instance, targets, timeout)
+    if not root then return nil end
+    local t0 = os.clock()
+    timeout = timeout or 8
+    while os.clock() - t0 < timeout do
+        local inst = findFirstByText(root, targets)
+        if inst and inst:IsA("GuiObject") and isGuiVisible(inst) then
+            return inst
+        end
+        task.wait(0.15)
+    end
+    return nil
+end
+
 --------------------------------------------------
---  UTIL: firesignal kuat + klik generik + keypress
+--  FIRE SIGNAL KUAT + KLIK GENERIK + KEYPRESS
 --------------------------------------------------
 local function fireSignalStrong(signal)
     if not signal then return false end
@@ -401,7 +419,7 @@ local function equipRodSlot2()
 
     -- 2) Tunggu sedikit, cek apakah sudah ada Tool
     local t0 = os.clock()
-    while os.clock() - t0 < 0.7 do
+    while os.clock() - t0 < 0.9 do
         if getEquippedTool() then
             return true
         end
@@ -446,7 +464,7 @@ local function findClickableNear(labelObj: GuiObject)
 end
 
 --------------------------------------------------
---  UTIL: ModernKeyUI (key + submit)
+--  ModernKeyUI (key + submit)
 --------------------------------------------------
 local function findModernKeyUI()
     local keyBox, submitButton
@@ -487,7 +505,7 @@ local function autoKeyAndSubmit()
 
     local keyBox, submitButton
 
-    -- Tunggu ModernKeyUI muncul (maks ~20 detik, lebih pendek dari versi lama)
+    -- Tunggu ModernKeyUI muncul (maks ~20 detik)
     local t0 = os.clock()
     while os.clock() - t0 < 20 do
         keyBox, submitButton = findModernKeyUI()
@@ -508,27 +526,56 @@ local function autoKeyAndSubmit()
         keyBox:ReleaseFocus()
     end)
 
-    task.wait(0.2)
+    task.wait(0.25)
     clickGuiObject(submitButton)
     return true
 end
 
 --------------------------------------------------
---  Cari tombol Minimize Spades berdasarkan header "of Spades"
+--  SPADES WINDOW: root + minimize
 --------------------------------------------------
-local function findSpadesMinimizeButton(timeout)
+local function findSpadesRootWindow(timeout)
+    local t0 = os.clock()
+    timeout = timeout or 20
+
+    while os.clock() - t0 < timeout do
+        for _, root in ipairs(getRoots()) do
+            for _, d in ipairs(root:GetDescendants()) do
+                if (d:IsA("TextLabel") or d:IsA("TextButton"))
+                    and isGuiVisible(d) then
+                    local txt = string.lower(textOf(d))
+                    if txt:find("of spades", 1, true) then
+                        -- Naik sampai frame tertinggi di bawah ScreenGui (main window)
+                        local win = d
+                        while win and win.Parent and not win.Parent:IsA("ScreenGui") do
+                            win = win.Parent
+                        end
+                        if win and win:IsA("GuiObject") then
+                            return win
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.2)
+    end
+
+    return nil
+end
+
+local function findSpadesMinimizeButton(timeout, spadesRoot)
     local t0 = os.clock()
     timeout = timeout or 8
 
     while os.clock() - t0 < timeout do
-        for _, root in ipairs(getRoots()) do
+        local root = spadesRoot or findSpadesRootWindow(3)
+        if root then
             local header = findFirstByText(root, { "of spades" })
             if header and header:IsA("GuiObject") then
                 local bar = header.Parent
                 if bar and bar:IsA("GuiObject") then
                     local candidates = {}
 
-                    -- tombol di bar + sedikit ke parent atas (biar dapet icon)
                     local function collect(from)
                         for _, d in ipairs(from:GetDescendants()) do
                             if (d:IsA("TextButton") or d:IsA("ImageButton")) and isGuiVisible(d) then
@@ -538,17 +585,17 @@ local function findSpadesMinimizeButton(timeout)
                     end
 
                     collect(bar)
-                    local parent = bar.Parent
-                    if parent and parent:IsA("GuiObject") then
-                        collect(parent)
+
+                    if bar.Parent and bar.Parent:IsA("GuiObject") then
+                        collect(bar.Parent)
                     end
 
                     if #candidates > 0 then
-                        -- buang duplikat
-                        local mark, uniq = {}, {}
+                        -- unique
+                        local seen, uniq = {}, {}
                         for _, d in ipairs(candidates) do
-                            if not mark[d] then
-                                mark[d] = true
+                            if not seen[d] then
+                                seen[d] = true
                                 table.insert(uniq, d)
                             end
                         end
@@ -563,18 +610,17 @@ local function findSpadesMinimizeButton(timeout)
                             return t:find("-", 1, true) or t:find("min", 1, true)
                         end
 
-                        -- 1) Prioritas: tombol yang teksnya '-' / ada kata 'min'
+                        -- 1) tombol yang teksnya '-' / ada 'min'
                         for _, btn in ipairs(candidates) do
                             if looksLikeMinus(btn) then
                                 return btn
                             end
                         end
 
-                        -- 2) Fallback: ambil tombol kedua dari kanan (kanan = X, kiri = -)
+                        -- 2) fallback: kedua dari kanan (kanan = X, kiri = -)
                         if #candidates >= 2 then
                             return candidates[#candidates - 1]
                         else
-                            -- kalau cuma satu tombol ya udah pakai itu
                             return candidates[#candidates]
                         end
                     end
@@ -589,16 +635,47 @@ local function findSpadesMinimizeButton(timeout)
 end
 
 --------------------------------------------------
+--  KHUSUS: Auto Sell Disable option di blok Auto Sell
+--------------------------------------------------
+local function findDisableOptionInAutoSell(autoSellHeader, spadesRoot)
+    if autoSellHeader and autoSellHeader:IsA("GuiObject") then
+        local container = autoSellHeader:FindFirstAncestorOfClass("Frame")
+        if container and container.Parent then
+            for _, d in ipairs(container.Parent:GetDescendants()) do
+                if d:IsA("TextButton") and isGuiVisible(d) then
+                    local txt = string.lower(textOf(d))
+                    if txt:find("disable", 1, true) then
+                        return d
+                    end
+                end
+            end
+        end
+    end
+    -- fallback: cari saja "Disable" di seluruh window
+    if spadesRoot then
+        return waitForTextInRoot(spadesRoot, { "disable" }, 4)
+    end
+    return nil
+end
+
+--------------------------------------------------
 --  KHUSUS: Makro UI INDO HANGOUT (1–4)
 --------------------------------------------------
 local function performIndoHangoutFlow()
+    -- Cari window utama Spades dulu
+    local spadesRoot = findSpadesRootWindow(20)
+    if not spadesRoot then
+        warn("[Axa Autokey] Spades window tidak ditemukan, batal makro INDO.")
+        return
+    end
+
     -- STEP 1: Tekan angka 2 (equip Rod)
     equipRodSlot2()
-    task.wait(0.15)
+    task.wait(0.25)
 
     -- STEP 2: Centang Auto Fishing
     do
-        local lbl = waitForText({ "auto fishing" }, 10)
+        local lbl = waitForTextInRoot(spadesRoot, { "auto fishing" }, 10)
         if lbl and lbl:IsA("GuiObject") then
             local target = findClickableNear(lbl)
             clickGuiObject(target)
@@ -606,37 +683,39 @@ local function performIndoHangoutFlow()
             warn("[Axa Autokey] Tidak menemukan label 'Auto Fishing'.")
         end
     end
-    task.wait(0.15)
+    task.wait(0.25)
 
-    -- STEP 3: Buka panel Auto Sell dan pilih Disable
+    -- STEP 3: Buka panel Auto Sell lalu pilih Disable
+    local autoSellHeader = nil
     do
-        -- 3a: buka panel Auto Sell
-        local header = waitForText({ "auto sell under", "auto sell" }, 10)
-        if header and header:IsA("GuiObject") then
-            local clickTarget = findClickableNear(header)
+        autoSellHeader = waitForTextInRoot(spadesRoot, { "auto sell under", "auto sell" }, 10)
+        if autoSellHeader and autoSellHeader:IsA("GuiObject") then
+            local clickTarget = findClickableNear(autoSellHeader)
             clickGuiObject(clickTarget)
         else
             warn("[Axa Autokey] Tidak menemukan header 'Auto Sell'.")
         end
 
-        -- 3b: tunggu opsi 'Disable' muncul lalu klik
-        local disableBtn = waitForText({ "disable" }, 6)
+        task.wait(0.25)
+
+        local disableBtn = findDisableOptionInAutoSell(autoSellHeader, spadesRoot)
         if disableBtn and disableBtn:IsA("GuiObject") then
             clickGuiObject(disableBtn)
         else
             warn("[Axa Autokey] Tidak menemukan opsi 'Disable' di Auto Sell.")
         end
     end
-    task.wait(0.15)
+
+    task.wait(0.3)
 
     -- STEP 4: Klik tombol Minimize UI Spades
     do
-        local minBtn = findSpadesMinimizeButton(10)
+        local minBtn = findSpadesMinimizeButton(10, spadesRoot)
         if minBtn and minBtn:IsA("GuiObject") then
             clickGuiObject(minBtn)
         else
-            -- Fallback absolut: cari tombol text "-" atau Name mengandung "Min"
-            local fallback = waitForText({ " - ", "-", "minimize" }, 4)
+            -- Fallback global
+            local fallback = waitForTextGlobal({ " - ", "-", "minimize" }, 4)
             if fallback and fallback:IsA("GuiObject") then
                 clickGuiObject(fallback)
             else
@@ -703,12 +782,10 @@ local function runEntry(entry, buttonInstance)
         return
     end
 
-    -- Setelah script jalan, langsung Autokey + makro INDO (di thread terpisah)
+    -- Setelah script jalan, jalankan Autokey + makro INDO (di thread terpisah)
     task.spawn(function()
-        -- Autokey (isi KEY + klik Submit)
         autoKeyAndSubmit()
 
-        -- Khusus label "INDO HANGOUT": setelah key masuk, tunggu sebentar & jalankan flow 1–4
         if string.lower(entry.label or "") == "indo hangout" then
             -- kasih waktu UI Spades kebuka penuh
             task.wait(2.0)
@@ -753,5 +830,6 @@ _G.AxaAutokeyHG = {
     AutoKeyAndSubmit  = autoKeyAndSubmit,
     FindModernKeyUI   = findModernKeyUI,
     PerformIndoFlow   = performIndoHangoutFlow,
+    FindSpadesRoot    = findSpadesRootWindow,
     FindSpadesMinBtn  = findSpadesMinimizeButton,
 }
