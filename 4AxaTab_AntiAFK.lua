@@ -1,11 +1,30 @@
 --==========================================================
---  AxaTab_AntiAFK.lua
+--  4AxaTab_AntiAFK.lua
 --  Env:
 --    TAB_FRAME, LocalPlayer, RunService, StarterGui, VirtualInputManager, Players
 --==========================================================
 
 local antiTabFrame = TAB_FRAME
+local player       = LocalPlayer
 
+------------------------------------------------------
+-- WAKTU & FORMAT UPTIME
+------------------------------------------------------
+local playStartTime = os.time()   -- awal main (saat script jalan)
+local antiStartTime = nil         -- diisi saat AntiAFK di-enable
+
+local function formatHMS(sec)
+    sec = math.max(0, math.floor(sec or 0))
+    local h = math.floor(sec / 3600)
+    sec = sec % 3600
+    local m = math.floor(sec / 60)
+    local s = sec % 60
+    return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+------------------------------------------------------
+-- UI HEADER
+------------------------------------------------------
 local antiHeader = Instance.new("TextLabel")
 antiHeader.Name = "Header"
 antiHeader.Size = UDim2.new(1, -10, 0, 22)
@@ -58,9 +77,35 @@ antiStatus.TextXAlignment = Enum.TextXAlignment.Left
 antiStatus.Text = "Status: Idle"
 antiStatus.Parent = antiTabFrame
 
--- ==== AntiAFK+ LOGIC ====
-local player = LocalPlayer
+-- Uptime AntiAFK
+local antiUptimeAFK = Instance.new("TextLabel")
+antiUptimeAFK.Name = "UptimeAFK"
+antiUptimeAFK.Size = UDim2.new(1, -10, 0, 18)
+antiUptimeAFK.Position = UDim2.new(0, 5, 0, 112)
+antiUptimeAFK.BackgroundTransparency = 1
+antiUptimeAFK.Font = Enum.Font.Gotham
+antiUptimeAFK.TextSize = 12
+antiUptimeAFK.TextColor3 = Color3.fromRGB(90, 90, 120)
+antiUptimeAFK.TextXAlignment = Enum.TextXAlignment.Left
+antiUptimeAFK.Text = "Uptime AntiAFK: 00:00:00"
+antiUptimeAFK.Parent = antiTabFrame
 
+-- Uptime Play
+local antiUptimePlay = Instance.new("TextLabel")
+antiUptimePlay.Name = "UptimePlay"
+antiUptimePlay.Size = UDim2.new(1, -10, 0, 18)
+antiUptimePlay.Position = UDim2.new(0, 5, 0, 132)
+antiUptimePlay.BackgroundTransparency = 1
+antiUptimePlay.Font = Enum.Font.Gotham
+antiUptimePlay.TextSize = 12
+antiUptimePlay.TextColor3 = Color3.fromRGB(90, 90, 120)
+antiUptimePlay.TextXAlignment = Enum.TextXAlignment.Left
+antiUptimePlay.Text = "Uptime Play: 00:00:00"
+antiUptimePlay.Parent = antiTabFrame
+
+------------------------------------------------------
+-- ==== AntiAFK+ LOGIC ====
+------------------------------------------------------
 local function notify(title, text, dur)
     pcall(function()
         StarterGui:SetCore("SendNotification", {
@@ -100,7 +145,7 @@ local stillTime, totalDist = 0, 0
 local lastAutoStart, justRestarted = 0, false
 local afterRespawn = false
 
-local antiEnabled = true
+local antiEnabled = false
 local antiIdleConn = nil
 
 local function setStatus(text, color)
@@ -226,6 +271,18 @@ local function startAntiLoop()
         while true do
             task.wait(1)
 
+            -- UPDATE UPTIME SETIAP DETIK
+            local now = os.time()
+            if antiUptimePlay then
+                local playSec = now - playStartTime
+                antiUptimePlay.Text = "Uptime Play: " .. formatHMS(playSec)
+            end
+            if antiUptimeAFK then
+                local antiSec = (antiStartTime and (now - antiStartTime)) or 0
+                antiUptimeAFK.Text = "Uptime AntiAFK: " .. formatHMS(antiSec)
+            end
+
+            -- LOGIC ANTI AFK
             if not antiEnabled then
                 continue
             end
@@ -273,12 +330,12 @@ local function startAntiLoop()
                 continue
             end
 
-            local now = time()
-            if AUTO_START and stillTime >= STOP_DELAY and totalDist < 0.5 and (now - lastAutoStart > RETRY_INTERVAL) then
+            local now2 = time()
+            if AUTO_START and stillTime >= STOP_DELAY and totalDist < 0.5 and (now2 - lastAutoStart > RETRY_INTERVAL) then
                 if not toggleBtn or not toggleBtn.Parent then
                     toggleBtn = waitForToggleButton()
                 end
-                if justRestarted and (now - lastAutoStart) > (RETRY_INTERVAL * 2) then
+                if justRestarted and (now2 - lastAutoStart) > (RETRY_INTERVAL * 2) then
                     justRestarted = false
                 end
 
@@ -293,7 +350,7 @@ local function startAntiLoop()
                     end
                     if string.find(getButtonText(), "start") then
                         clickButton(toggleBtn)
-                        lastAutoStart = now
+                        lastAutoStart = now2
                         justRestarted = true
                         setStatus("🟢 Running", Color3.fromRGB(100,255,100))
                         push("Running ✅")
@@ -326,6 +383,7 @@ local function enableAntiAFK()
         end)
     end
 
+    antiStartTime = os.time() -- mulai hitung uptime AntiAFK
     setAntiEnabledUI(true)
     push("UI AntiAFK+ aktif ✅")
     startAntiLoop()
@@ -337,6 +395,7 @@ local function disableAntiAFK()
     stillTime, totalDist, justRestarted = 0, 0, false
     lastState = nil
     afterRespawn = false
+    antiStartTime = nil -- reset uptime AntiAFK
     push("AntiAFK+ dimatikan ⛔️")
 end
 
@@ -350,3 +409,8 @@ end)
 
 -- expose untuk core kalau mau matikan saat Close
 _G.AxaHub_AntiAFK_Disable = disableAntiAFK
+
+------------------------------------------------------
+-- DEFAULT: AntiAFK LANGSUNG AKTIF
+------------------------------------------------------
+enableAntiAFK()
