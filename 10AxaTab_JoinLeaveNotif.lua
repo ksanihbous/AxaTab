@@ -1,5 +1,5 @@
 --==========================================================
---  10AxaTab_JoinLeave.lua
+--  10AxaTab_JoinLeaveNotif.lua
 --  TAB 10: "Join/Leave Notif"
 --  Env dari CORE:
 --    TAB_FRAME, TAB_ID
@@ -195,25 +195,21 @@ end
 ------------------------------------------------------
 -- UI HELPERS
 ------------------------------------------------------
+-- Disimplify: chip button tanpa UIStroke, 1 UICorner saja (lebih ringan)
 local function glassChipButton(text)
     local b = Instance.new("TextButton")
     b.AutoButtonColor = true
     b.Size = UDim2.new(0, 90, 0, 24)
-    b.BackgroundColor3 = Color3.fromRGB(255,255,255)
-    b.BackgroundTransparency = 0.2
+    b.BackgroundColor3 = Color3.fromRGB(235, 238, 245)
+    b.BackgroundTransparency = 0
     b.BorderSizePixel = 0
     b.Font = Enum.Font.Gotham
     b.TextSize = 13
     b.TextColor3 = Color3.fromRGB(40,40,70)
     b.Text = text or ""
     local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 8)
+    c.CornerRadius = UDim.new(0, 6)
     c.Parent = b
-    local s = Instance.new("UIStroke")
-    s.Thickness = 1
-    s.Color = Color3.fromRGB(200,205,230)
-    s.Transparency = 0.4
-    s.Parent = b
     return b
 end
 
@@ -329,24 +325,14 @@ subtitle.TextColor3 = Color3.fromRGB(100, 100, 140)
 subtitle.Text = "Pantau siapa yang bergabung/keluar map, daftar pemain aktif, dan detail koneksi (friend) kamu."
 subtitle.Parent = frame
 
+-- HEADER SEDERHANA: tanpa Tahoe frame, full transparan
 local headerBar = Instance.new("Frame")
 headerBar.Name = "HeaderBar"
 headerBar.Size = UDim2.new(1, -10, 0, 32)
 headerBar.Position = UDim2.new(0, 5, 0, 62)
-headerBar.BackgroundColor3 = Color3.fromRGB(245,247,255)
-headerBar.BackgroundTransparency = 0
+headerBar.BackgroundTransparency = 1
 headerBar.BorderSizePixel = 0
 headerBar.Parent = frame
-
-local hbCorner = Instance.new("UICorner")
-hbCorner.CornerRadius = UDim.new(0, 8)
-hbCorner.Parent = headerBar
-
-local hbStroke = Instance.new("UIStroke")
-hbStroke.Thickness = 1
-hbStroke.Color = Color3.fromRGB(215,220,240)
-hbStroke.Transparency = 0.4
-hbStroke.Parent = headerBar
 
 -- Sound icon (🔊)
 local soundBtn = glassChipButton("🔊")
@@ -357,7 +343,7 @@ soundBtn.Parent = headerBar
 
 local function refreshSoundBtn()
     soundBtn.Text = soundEnabled and "🔊" or "🔇"
-    soundBtn.BackgroundTransparency = soundEnabled and 0.1 or 0.3
+    soundBtn.BackgroundColor3 = soundEnabled and Color3.fromRGB(210, 240, 220) or Color3.fromRGB(245, 220, 220)
     soundBtn.TextColor3 = soundEnabled and Color3.fromRGB(30,120,70) or Color3.fromRGB(150,50,50)
 end
 refreshSoundBtn()
@@ -376,7 +362,7 @@ notifBtn.Parent = headerBar
 
 local function refreshNotifBtn()
     notifBtn.Text = notifEnabled and "NOTIF: ON" or "NOTIF: OFF"
-    notifBtn.BackgroundTransparency = notifEnabled and 0.1 or 0.3
+    notifBtn.BackgroundColor3 = notifEnabled and Color3.fromRGB(210, 240, 220) or Color3.fromRGB(245, 220, 220)
     notifBtn.TextColor3 = notifEnabled and Color3.fromRGB(30,120,70) or Color3.fromRGB(150,50,50)
 end
 refreshNotifBtn()
@@ -497,7 +483,7 @@ searchBox.Text = ""
 searchBox.Parent = searchBg
 
 ------------------------------------------------------
--- SCROLLING LIST (Join / Leave / Player) - VERTIKAL SANTAI
+-- SCROLLING LIST (Join / Leave / Player)
 ------------------------------------------------------
 local function newListScroll(name)
     local sf = Instance.new("ScrollingFrame")
@@ -544,7 +530,7 @@ listLeave.Visible = false
 listPlayer.Visible= false
 
 ------------------------------------------------------
--- PROFILE PAGE: VERTIKAL ONLY, NYAMAN
+-- PROFILE PAGE
 ------------------------------------------------------
 local profilePage = Instance.new("Frame")
 profilePage.Name = "ProfilePage"
@@ -878,7 +864,6 @@ local function makeJoinLeaveRow(parent, info, kind)
     end)
 
     row.MouseButton1Click:Connect(function()
-        -- buka profile
         segButtons.Profile.Visible = true
         markSeg("Profile")
         setActiveTab("Profile")
@@ -887,16 +872,11 @@ local function makeJoinLeaveRow(parent, info, kind)
             name = info.name,
             displayName = info.displayName
         }
-        clearProfile()
-        -- render akan dipanggil di bawah
-        -- untuk memastikan info fresh
         local p = Players:GetPlayerByUserId(openedInfo.userId)
         if p then
             openedInfo.name = p.Name
             openedInfo.displayName = p.DisplayName
         end
-        -- panggil renderer
-        -- (fungsi didefinisikan setelah deklarasi)
         _G.__AxaJoinLeave_RenderProfile(openedInfo)
     end)
 
@@ -1005,7 +985,7 @@ end
 searchBox:GetPropertyChangedSignal("Text"):Connect(applySearch)
 
 ------------------------------------------------------
--- PROFILE RENDER (di-export ke _G biar bisa dipanggil row)
+-- PROFILE RENDER
 ------------------------------------------------------
 local function durHMS(sec)
     sec = math.max(0, math.floor(sec))
@@ -1074,7 +1054,6 @@ local function renderProfile(info)
         copyOrAnnounce(url)
     end)
 
-    -- STATUS KONEKSI
     local rowConn, vConn = makeFieldRow(pfList, "Status Koneksi")
 
     local function refreshConnLabel()
@@ -1088,7 +1067,6 @@ local function renderProfile(info)
 
     refreshConnLabel()
 
-    -- ROW TOMBOL: Tambah / Hapus Koneksi
     local rowBtn = Instance.new("Frame")
     rowBtn.Name = "Row_KoneksiActions"
     rowBtn.BackgroundTransparency = 1
@@ -1105,12 +1083,7 @@ local function renderProfile(info)
     btnDel.Position = UDim2.new(0, 140, 0.5, -12)
     btnDel.Parent = rowBtn
 
-    -- warna merah untuk hapus
     do
-        local s = btnDel:FindFirstChildOfClass("UIStroke")
-        if s then
-            s.Color = Color3.fromRGB(230,76,76)
-        end
         btnDel.TextColor3 = Color3.fromRGB(150,40,40)
     end
 
@@ -1173,7 +1146,6 @@ local function renderProfile(info)
         refreshButtons()
     end)
 
-    -- update durasi lokal setiap detik saat tab Profile aktif
     if joinTimes[info.userId] then
         task.spawn(function()
             while activeTab == "Profile" and profilePage.Visible and joinTimes[info.userId] do
@@ -1229,7 +1201,6 @@ local function rebuildPlayerList(map)
     applySearch()
 end
 
--- seed awal
 local snap = snapshotPlayers()
 local nowTs = os.time()
 for uid,_ in pairs(snap) do
