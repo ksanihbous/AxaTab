@@ -476,7 +476,7 @@ local function buildRow(plr)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
     spectateBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
-    spectateBtn.Text = "Spectate"
+    spectateBtn.Text = "SPECT POV"
     spectateBtn.Parent = content
 
     local sc = Instance.new("UICorner")
