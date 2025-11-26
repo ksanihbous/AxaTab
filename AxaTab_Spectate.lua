@@ -63,7 +63,7 @@ sbCorner.CornerRadius = UDim.new(0, 8)
 sbCorner.Parent = searchBox
 
 ------------------------------------------------
--- LIST PLAYER (SCROLLING BAWAH)
+-- LIST PLAYER (SCROLLING VERTICAL)
 ------------------------------------------------
 local list = Instance.new("ScrollingFrame")
 list.Name = "PlayerList"
@@ -163,7 +163,6 @@ local function stopSpectate()
         cam.CameraSubject = hum
         cam.CameraType    = Enum.CameraType.Custom
     elseif cam then
-        -- fallback: biar balik kontrol default
         cam.CameraType = Enum.CameraType.Custom
         cam.CameraSubject = nil
     end
@@ -173,7 +172,7 @@ local function stopSpectate()
 end
 
 ------------------------------------------------
--- REGISTER GLOBAL HOOK UNTUK CORE DOCK
+-- GLOBAL HOOK UNTUK CORE DOCK
 ------------------------------------------------
 _G.AxaHub = _G.AxaHub or {}
 
@@ -292,7 +291,7 @@ local function applySearchFilter()
 end
 
 local function buildRow(plr)
-    -- ROW LUAR (VERTICAL LIST)
+    -- ROW LUAR (VERTICAL)
     local row = Instance.new("Frame")
     row.Name = plr.Name
     row.Size = UDim2.new(1, 0, 0, 40)
@@ -315,7 +314,7 @@ local function buildRow(plr)
         rs.Color             = Color3.fromRGB(120, 160, 235)
     end
 
-    -- SCROLLINGFRAME HORIZONTAL DI DALAM ROW
+    -- SCROLLING HORIZONTAL DI DALAM ROW
     local hScroll = Instance.new("ScrollingFrame")
     hScroll.Name = "RowScroll"
     hScroll.Position = UDim2.new(0, 4, 0, 4)
@@ -324,13 +323,13 @@ local function buildRow(plr)
     hScroll.BorderSizePixel = 0
     hScroll.ScrollBarThickness = 3
     hScroll.ScrollingDirection = Enum.ScrollingDirection.X
-    hScroll.CanvasSize = UDim2.new(0, 360, 0, 0) -- lebar konten
+    hScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    hScroll.ScrollBarImageTransparency = 0.1
     hScroll.Parent = row
 
-    -- KONTEN SEBENARNYA (NAMA + TOMBOL) DI DALAM SCROLL HORIZONTAL
     local content = Instance.new("Frame")
     content.Name = "Content"
-    content.Size = UDim2.new(0, 360, 1, 0) -- lebar fixed, bisa diubah kalau mau
+    content.Size = UDim2.new(0, 360, 1, 0) -- sementara, nanti di-set lagi setelah tombol dibuat
     content.BackgroundTransparency = 1
     content.BorderSizePixel = 0
     content.Parent = hScroll
@@ -392,7 +391,10 @@ local function buildRow(plr)
     tc.CornerRadius = UDim.new(0, 8)
     tc.Parent = tpBtn
 
-    hScroll.CanvasSize = UDim2.new(0, content.Size.X.Offset + 8, 0, 0)
+    -- Hitung lebar konten sebenarnya (biar scroll X benar)
+    local totalWidth = tpBtn.Position.X.Offset + tpBtn.Size.X.Offset + 8
+    content.Size = UDim2.new(0, totalWidth, 1, 0)
+    hScroll.CanvasSize = UDim2.new(0, totalWidth, 0, 0)
 
     espBtn.MouseButton1Click:Connect(function()
         local newState = not activeESP[plr]
