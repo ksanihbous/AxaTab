@@ -1,5 +1,5 @@
 --==========================================================
---  AxaTab_ChatPublik.lua
+--  7AxaTab_ChatPublik.lua
 --  Dipanggil via AxaHub CORE (loadstring + env TAB_FRAME)
 --
 --  UI:
@@ -101,6 +101,7 @@ local LOG_OTHER_PLAYERS   = true
 
 -- MASTER SWITCH:
 -- kalau false -> TIDAK ADA relay ke Discord/history + subtitle & log dimatikan
+-- dan semua filter secara logika dianggap OFF walaupun UI masih terceklist.
 local CHAT_FILTER_ENABLED = true
 
 -- FILTER RUNTIME (checkbox)
@@ -546,7 +547,7 @@ end
 updateFilterCanvas()
 
 ------------------------------------------------
---  PANEL KANAN: Log + Chat Filter Toggle (tanpa frame subtitle di dalam tab)
+--  PANEL KANAN: Log + Chat Filter Toggle
 ------------------------------------------------
 local rightPanel = Instance.new("Frame")
 rightPanel.Name = "RightPanel"
@@ -803,7 +804,7 @@ local function pushSubtitleMessage(channelName, displayName, authorName, message
 end
 
 ------------------------------------------------
---  CHAT FILTER TOGGLE -> juga bersihkan subtitle saat OFF
+--  CHAT FILTER TOGGLE (MASTER SWITCH)
 ------------------------------------------------
 local function refreshChatFilterToggle()
     if CHAT_FILTER_ENABLED then
@@ -824,9 +825,19 @@ cfToggle.MouseButton1Click:Connect(function()
     refreshChatFilterToggle()
 
     if not CHAT_FILTER_ENABLED then
-        -- bersihkan subtitle global saat dimatikan
+        -- OFF:
+        -- 1) Matikan semua efek filter (sudah dijaga di shouldRelayChat + guard CHAT_FILTER_ENABLED)
+        -- 2) Hapus isi subtitleLines dan hancurkan UI 3 baris di bawah layar.
         subtitleLines = {}
-        updateSubtitleUI()
+        if subtitleGui then
+            subtitleGui:Destroy()
+            subtitleGui = nil
+            subtitleFrame = nil
+        end
+    else
+        -- ON:
+        -- Subtitle UI akan dibuat ulang otomatis ketika ada pesan baru
+        -- lewat pushSubtitleLine() / pushSubtitleMessage().
     end
 end)
 
@@ -870,6 +881,8 @@ end
 --  FILTER LOGIC (shouldRelayChat)
 ------------------------------------------------
 local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
+    -- Master OFF = semua filter dianggap nonaktif:
+    -- tidak ada log UI, tidak ada subtitle, tidak ada history, tidak ada webhook.
     if not CHAT_FILTER_ENABLED then
         return false
     end
