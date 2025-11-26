@@ -122,13 +122,13 @@ akLayout.Padding = UDim.new(0, 4)
 akLayout.Parent = akList
 
 akLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    akList.CanvasSize = UDim2.new(0, 0, 0, akLayout.AbsoluteContentSize.Y + 4)
+    local size = akLayout.AbsoluteContentSize
+    akList.CanvasSize = UDim2.new(0, 0, 0, size.Y + 4)
 end)
 
 --------------------------------------------------
 --  CONFIG: KEY + ENTRIES SCRIPT
 --------------------------------------------------
--- EDIT KEY DI SINI
 local KEY_STRING = "b5a60c22-68f1-4ee9-8e73-16f66179bf36"
 
 local ENTRIES = {
@@ -192,8 +192,21 @@ local function getRoots()
     local roots = {}
     if playerGui then table.insert(roots, playerGui) end
     if CoreGui then table.insert(roots, CoreGui) end
-    pcall(function() if gethui then local r=gethui(); if r then table.insert(roots,r) end end end)
-    pcall(function() if get_hidden_gui then local r=get_hidden_gui(); if r then table.insert(roots,r) end end end)
+
+    pcall(function()
+        if gethui then
+            local r = gethui()
+            if r then table.insert(roots, r) end
+        end
+    end)
+
+    pcall(function()
+        if get_hidden_gui then
+            local r = get_hidden_gui()
+            if r then table.insert(roots, r) end
+        end
+    end)
+
     return roots
 end
 
@@ -203,32 +216,38 @@ end
 local function isGuiVisible(gui: Instance)
     local obj = gui
     while obj and obj:IsA("GuiObject") do
-        if obj.Visible == false then return false end
+        if obj.Visible == false then
+            return false
+        end
         obj = obj.Parent
     end
     return true
 end
 
-local function textOf(x)
-    local t = (x.Text ~= nil) and x.Text or (x.PlaceholderText or "")
-    return typeof(t)=="string" and t or ""
+local function textOf(x: Instance)
+    local t = x and (x.Text or x.PlaceholderText) or ""
+    if typeof(t) ~= "string" then
+        return ""
+    end
+    return t
 end
 
-local function findFirstByText(root, targets) -- targets: string or {strings}
+local function findFirstByText(root: Instance, targets)
     local want = {}
     if typeof(targets) == "string" then
-        want = {string.lower(targets)}
+        want = { string.lower(targets) }
     else
-        for _,s in ipairs(targets) do want[#want+1]=string.lower(s) end
+        for _, s in ipairs(targets) do
+            table.insert(want, string.lower(s))
+        end
     end
+
     for _, d in ipairs(root:GetDescendants()) do
-        if d:IsA("TextButton") or d:IsA("TextLabel") or d:IsA("ImageButton") then
-            if isGuiVisible(d) then
-                local txt = string.lower(textOf(d))
-                for _,w in ipairs(want) do
-                    if txt:find(w, 1, true) then
-                        return d
-                    end
+        if (d:IsA("TextButton") or d:IsA("TextLabel") or d:IsA("ImageButton")) and isGuiVisible(d) then
+            local txt = string.lower(textOf(d))
+            for _, w in ipairs(want) do
+                if txt:find(w, 1, true) then
+                    return d
                 end
             end
         end
@@ -242,48 +261,85 @@ local function findAnyByTextInRoots(targets)
     end
 end
 
+local function waitForText(targets, timeout)
+    local t0 = os.clock()
+    timeout = timeout or 10
+    while os.clock() - t0 < timeout do
+        local inst = findAnyByTextInRoots(targets)
+        if inst and inst:IsA("GuiObject") and isGuiVisible(inst) then
+            return inst
+        end
+        task.wait(0.2)
+    end
+    return nil
+end
+
 --------------------------------------------------
---  UTIL: firesignal kuat + klik generik
+--  UTIL: firesignal kuat + klik generik + keypress
 --------------------------------------------------
 local function fireSignalStrong(signal)
     if not signal then return false end
-    local hit = false
+    local anyFired = false
+
+    -- firesignal bawaan executor
     if typeof(firesignal) == "function" then
-        if pcall(function() firesignal(signal) end) then hit = true end
+        if pcall(function() firesignal(signal) end) then
+            anyFired = true
+        end
     end
+
+    -- getconnections
     local getCons
-    if typeof(getconnections) == "function" then getCons = getconnections
-    elseif debug and typeof(debug.getconnections)=="function" then getCons = debug.getconnections end
+    if typeof(getconnections) == "function" then
+        getCons = getconnections
+    elseif debug and typeof(debug.getconnections) == "function" then
+        getCons = debug.getconnections
+    end
+
     if getCons then
         pcall(function()
-            for _,conn in ipairs(getCons(signal)) do
+            for _, conn in ipairs(getCons(signal)) do
                 if conn then
                     pcall(function()
-                        if typeof(conn)=="table" and conn.Function then conn.Function()
-                        elseif typeof(conn)=="userdata" then
-                            if conn.Function then conn.Function() elseif conn.Fire then conn:Fire() end
+                        if typeof(conn) == "table" and conn.Function then
+                            conn.Function()
+                        elseif typeof(conn) == "userdata" then
+                            if conn.Function then
+                                conn.Function()
+                            elseif conn.Fire then
+                                conn:Fire()
+                            end
                         end
                     end)
-                    hit = true
+                    anyFired = true
                 end
             end
         end)
     end
-    return hit
+
+    return anyFired
 end
 
 local function clickGuiObject(gui: GuiObject)
     if not gui then return false end
+
     local ok =
         fireSignalStrong(gui.MouseButton1Click)
         or fireSignalStrong(gui.MouseButton1Down)
         or fireSignalStrong(gui.Activated)
-    if ok then return true end
 
-    if not VirtualInputManager or not UserInputService then return false end
+    if ok then
+        return true
+    end
+
+    if not VirtualInputManager or not UserInputService then
+        return false
+    end
+
     local pos  = gui.AbsolutePosition
     local size = gui.AbsoluteSize
     local x, y = pos.X + size.X/2, pos.Y + size.Y/2
+
     pcall(function()
         VirtualInputManager:SendMouseMoveEvent(x, y, game)
         task.wait(0.03)
@@ -291,6 +347,7 @@ local function clickGuiObject(gui: GuiObject)
         task.wait(0.02)
         VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
     end)
+
     return true
 end
 
@@ -304,10 +361,98 @@ local function pressKey(code: Enum.KeyCode, hold)
 end
 
 --------------------------------------------------
---  UTIL: klik submit ModernKeyUI
+--  EQUIP ROD: Tekan "2" + coba equip Tool rod secara real
+--------------------------------------------------
+local function getEquippedTool()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChildOfClass("Tool")
+end
+
+local function tryEquipRodDirect()
+    local char     = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    local hum      = char and char:FindFirstChildOfClass("Humanoid")
+    if not (char and backpack and hum) then return false end
+
+    local candidate
+    for _, item in ipairs(backpack:GetChildren()) do
+        if item:IsA("Tool") then
+            local n = string.lower(item.Name)
+            if n:find("rod") or n:find("fish") or n:find("pancing") then
+                candidate = item
+                break
+            end
+            candidate = candidate or item
+        end
+    end
+
+    if candidate then
+        pcall(function()
+            hum:EquipTool(candidate)
+        end)
+        return true
+    end
+
+    return false
+end
+
+local function equipRodSlot2()
+    -- 1) Tekan angka 2 (virtual)
+    pressKey(Enum.KeyCode.Two, 0.06)
+
+    -- 2) Tunggu tool ter-equip
+    local t0 = os.clock()
+    while os.clock() - t0 < 1.5 do
+        if getEquippedTool() then
+            return true
+        end
+        task.wait(0.1)
+    end
+
+    -- 3) Fallback: equip rod dari Backpack secara langsung
+    if tryEquipRodDirect() then
+        return true
+    end
+
+    return false
+end
+
+--------------------------------------------------
+--  UTIL: klik di sekitar label (untuk toggle)
+--------------------------------------------------
+local function findClickableNear(labelObj: GuiObject)
+    if not labelObj then return nil end
+    local parent = labelObj.Parent
+    if not parent then return nil end
+
+    -- Cari tombol di parent
+    for _, d in ipairs(parent:GetChildren()) do
+        if (d:IsA("TextButton") or d:IsA("ImageButton")) and isGuiVisible(d) then
+            return d
+        end
+    end
+
+    -- Cari tombol di subtree parent
+    for _, d in ipairs(parent:GetDescendants()) do
+        if (d:IsA("TextButton") or d:IsA("ImageButton")) and isGuiVisible(d) then
+            return d
+        end
+    end
+
+    if parent:IsA("TextButton") then
+        return parent
+    end
+
+    return labelObj
+end
+
+--------------------------------------------------
+--  UTIL: ModernKeyUI (key + submit)
 --------------------------------------------------
 local function findModernKeyUI()
     local keyBox, submitButton
+
     for _, root in ipairs(getRoots()) do
         if root and root.Parent then
             for _, gui in ipairs(root:GetDescendants()) do
@@ -315,17 +460,24 @@ local function findModernKeyUI()
                     for _, inst in ipairs(gui:GetDescendants()) do
                         if inst:IsA("TextBox") then
                             local ph = string.lower(inst.PlaceholderText or "")
-                            if ph == "enter your key" then keyBox = inst end
+                            if ph == "enter your key" then
+                                keyBox = inst
+                            end
                         elseif inst:IsA("TextButton") then
                             local txt = string.lower(inst.Text or "")
-                            if txt == "submit" then submitButton = inst end
+                            if txt == "submit" then
+                                submitButton = inst
+                            end
                         end
                     end
-                    if keyBox and submitButton then return keyBox, submitButton end
+                    if keyBox and submitButton then
+                        return keyBox, submitButton
+                    end
                 end
             end
         end
     end
+
     return nil, nil
 end
 
@@ -334,155 +486,108 @@ local function autoKeyAndSubmit()
         warn("[Axa Autokey] KEY_STRING kosong, skip auto key.")
         return false
     end
+
     local keyBox, submitButton
+
     for _ = 1, 60 do
         keyBox, submitButton = findModernKeyUI()
-        if keyBox and submitButton then break end
+        if keyBox and submitButton then
+            break
+        end
         task.wait(0.5)
     end
+
     if not (keyBox and submitButton) then
         warn("[Axa Autokey] Tidak menemukan ModernKeyUI / tombol Submit.")
         return false
     end
+
     pcall(function()
-        keyBox:CaptureFocus(); keyBox.Text = KEY_STRING; keyBox:ReleaseFocus()
+        keyBox:CaptureFocus()
+        keyBox.Text = KEY_STRING
+        keyBox:ReleaseFocus()
     end)
+
     task.wait(0.4)
     clickGuiObject(submitButton)
     return true
 end
 
 --------------------------------------------------
---  KHUSUS: Pasca-Submit “INDO HANGOUT” (otomasi UI)
---  Urutan:
---   1) Tekan '2' (equip rod)
---   2) Klik Auto Fishing (checkbox/toggle)
---   3) Klik header Auto Sell (panah/area) -> klik opsi 'Disable'
---   4) Klik tombol Minimize '-'
+--  KHUSUS: Makro UI INDO HANGOUT (1–4)
 --------------------------------------------------
-local function waitForIndoHangoutUI(timeout)
-    local t0 = os.clock()
-    while os.clock() - t0 < (timeout or 20) do
-        -- Cari label yang khas
-        local autoFishing = findAnyByTextInRoots({"auto fishing"})
-        local autoSell    = findAnyByTextInRoots({"auto sell", "auto sell under"})
-        if (autoFishing and isGuiVisible(autoFishing)) or (autoSell and isGuiVisible(autoSell)) then
-            return true
-        end
-        task.wait(0.25)
-    end
-    return false
-end
-
-local function findClickableNear(labelObj: GuiObject)
-    if not labelObj then return nil end
-    local parent = labelObj.Parent
-    if not parent then return nil end
-    -- Cari tombol dalam parent (toggle, imagebutton, dsb.)
-    for _, d in ipairs(parent:GetChildren()) do
-        if (d:IsA("TextButton") or d:IsA("ImageButton")) and isGuiVisible(d) then
-            return d
-        end
-    end
-    -- fallback: tombol apapun di subtree parent
-    for _, d in ipairs(parent:GetDescendants()) do
-        if (d:IsA("TextButton") or d:IsA("ImageButton")) and isGuiVisible(d) then
-            return d
-        end
-    end
-    return parent:IsA("TextButton") and parent or nil
-end
-
-local function clickByText(targets)
-    local inst = findAnyByTextInRoots(targets)
-    if inst and inst:IsA("GuiObject") then
-        return clickGuiObject(inst)
-    end
-    return false
-end
-
 local function performIndoHangoutFlow()
-    -- Step 1: Tekan '2'
-    pressKey(Enum.KeyCode.Two, 0.05)
-    task.wait(0.15)
+    -- STEP 1: Tekan angka 2 (equip Rod)
+    equipRodSlot2()
+    task.wait(0.35)
 
-    -- Step 2: Toggle Auto Fishing
+    -- STEP 2: Centang Auto Fishing
     do
-        local lbl = findAnyByTextInRoots({"auto fishing"})
-        local target = lbl and findClickableNear(lbl) or lbl
-        if target and target:IsA("GuiObject") then
+        local lbl = waitForText({ "auto fishing" }, 12)
+        if lbl and lbl:IsA("GuiObject") then
+            local target = findClickableNear(lbl)
             clickGuiObject(target)
         else
-            -- fallback: klik labelnya
-            if lbl and lbl:IsA("GuiObject") then clickGuiObject(lbl) end
+            warn("[Axa Autokey] Tidak menemukan label 'Auto Fishing'.")
         end
     end
-    task.wait(0.15)
+    task.wait(0.35)
 
-    -- Step 3: Buka Auto Sell -> pilih Disable
+    -- STEP 3: Buka panel Auto Sell dan pilih Disable
     do
-        local header = findAnyByTextInRoots({"auto sell", "auto sell under"})
+        -- 3a: buka panel Auto Sell
+        local header = waitForText({ "auto sell under", "auto sell" }, 12)
         if header and header:IsA("GuiObject") then
-            -- klik area header/panah untuk expand
-            local clicked = false
-            local arrow = findClickableNear(header)
-            if arrow then clicked = clickGuiObject(arrow) end
-            if not clicked then clickGuiObject(header) end
+            local clickTarget = findClickableNear(header)
+            clickGuiObject(clickTarget)
+        else
+            warn("[Axa Autokey] Tidak menemukan header 'Auto Sell'.")
         end
 
-        -- tunggu opsi muncul lalu klik "Disable"
-        local ok = false
-        local t0 = os.clock()
-        while os.clock() - t0 < 4 do
-            local disableBtn = findAnyByTextInRoots({"disable"})
-            if disableBtn and disableBtn:IsA("GuiObject") and isGuiVisible(disableBtn) then
-                clickGuiObject(disableBtn)
-                ok = true
-                break
-            end
-            task.wait(0.15)
-        end
-        if not ok then
-            -- fallback: klik header lagi lalu coba cari 'Disable' sekali lagi
-            if header and header:IsA("GuiObject") then clickGuiObject(header) end
-            task.wait(0.2)
-            local disableBtn2 = findAnyByTextInRoots({"disable"})
-            if disableBtn2 and disableBtn2:IsA("GuiObject") then clickGuiObject(disableBtn2) end
+        -- 3b: tunggu opsi 'Disable' muncul
+        local disableBtn = waitForText({ "disable" }, 8)
+        if disableBtn and disableBtn:IsA("GuiObject") then
+            clickGuiObject(disableBtn)
+        else
+            warn("[Axa Autokey] Tidak menemukan opsi 'Disable' di Auto Sell.")
         end
     end
-    task.wait(0.15)
+    task.wait(0.35)
 
-    -- Step 4: Klik Minimize '-'
+    -- STEP 4: Klik tombol Minimize UI (ikon '-')
     do
-        local minBtn = findAnyByTextInRoots({" - ", "-", "minimize"})
+        local minBtn = waitForText({ " - ", "-", "minimize" }, 8)
         if minBtn and minBtn:IsA("GuiObject") then
             clickGuiObject(minBtn)
         else
-            -- fallback: coba cari imagebutton bernama "Minimize"
-            for _, r in ipairs(getRoots()) do
-                for _, d in ipairs(r:GetDescendants()) do
-                    if (d:IsA("ImageButton") or d:IsA("TextButton")) and isGuiVisible(d) then
-                        local n = string.lower(d.Name)
-                        if n:find("min") then
-                            clickGuiObject(d)
-                            break
-                        end
+            -- Fallback: cari button bernama mirip "Minimize"
+            for _, root in ipairs(getRoots()) do
+                for _, d in ipairs(root:GetDescendants()) do
+                    if (d:IsA("TextButton") or d:IsA("ImageButton"))
+                        and isGuiVisible(d)
+                        and string.lower(d.Name):find("min") then
+                        clickGuiObject(d)
+                        return
                     end
                 end
             end
+            warn("[Axa Autokey] Tidak menemukan tombol Minimize '-'.")
         end
     end
 end
 
 --------------------------------------------------
---  LOAD SCRIPT PILIHAN + TRIGGER AUTOKEY + MAKRO INDO
+--  LOAD SCRIPT PILIHAN + AUTOKEY + MAKRO INDO
 --------------------------------------------------
 local function runEntry(entry, buttonInstance)
     if not entry or not entry.url then return end
+
     local method = string.lower(entry.method or "HttpGet")
     local source
 
-    if buttonInstance then buttonInstance.Text = "Loading..." end
+    if buttonInstance then
+        buttonInstance.Text = "Loading..."
+    end
 
     local ok, err = pcall(function()
         if method == "httpgetasync" then
@@ -494,39 +599,41 @@ local function runEntry(entry, buttonInstance)
 
     if not ok then
         warn("[Axa Autokey] Gagal HttpGet:", err)
-        if buttonInstance then buttonInstance.Text = entry.label or "Entry" end
+        if buttonInstance then
+            buttonInstance.Text = entry.label or "Entry"
+        end
         return
     end
 
     local fn, loadErr = loadstring(source)
     if not fn then
         warn("[Axa Autokey] Gagal loadstring:", loadErr)
-        if buttonInstance then buttonInstance.Text = entry.label or "Entry" end
+        if buttonInstance then
+            buttonInstance.Text = entry.label or "Entry"
+        end
         return
     end
 
     local okRun, runErr = pcall(fn)
     if not okRun then
         warn("[Axa Autokey] Error saat menjalankan script:", runErr)
-        if buttonInstance then buttonInstance.Text = entry.label or "Entry" end
+        if buttonInstance then
+            buttonInstance.Text = entry.label or "Entry"
+        end
         return
     end
 
-    -- Setelah script jalan, jalankan Autokey Submit
+    -- Setelah script jalan, jalanin autokey + makro INDO kalau perlu
     task.spawn(function()
         task.wait(2)
-        local submitted = autoKeyAndSubmit()
+        autoKeyAndSubmit()
 
-        -- KHUSUS ENTRIES "INDO HANGOUT": tunggu UI target lalu jalankan makro
-        if submitted and string.lower(entry.label or "") == "indo hangout" then
-            -- tunggu UI seperti di gambar (Auto Fishing / Auto Sell ada)
-            if waitForIndoHangoutUI(20) then
-                -- beri sedikit jeda agar layout settle
-                task.wait(0.35)
-                performIndoHangoutFlow()
-            else
-                warn("[Axa Autokey] UI INDO HANGOUT tidak terdeteksi dalam waktu tunggu.")
-            end
+        -- Khusus label "INDO HANGOUT": tunggu UI lalu jalankan flow 1–4
+        if string.lower(entry.label or "") == "indo hangout" then
+            -- tunggu sampai minimal salah satu elemen muncul (Auto Fishing / Auto Sell)
+            local _ = waitForText({ "auto fishing", "auto sell", "auto sell under" }, 35)
+            -- lalu lakukan langkah 1–4 secara sistematis
+            performIndoHangoutFlow()
         end
 
         if buttonInstance and buttonInstance.Parent then
@@ -560,7 +667,6 @@ for i, entry in ipairs(ENTRIES) do
     end)
 end
 
--- Expose dikit buat debugging manual
 _G.AxaAutokeyHG = {
     KEY_STRING        = KEY_STRING,
     ENTRIES           = ENTRIES,
