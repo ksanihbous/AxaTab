@@ -1,32 +1,8 @@
 --==========================================================
 --  7AxaTab_ChatPublik.lua
 --  Dipanggil via AxaHub CORE (loadstring + env TAB_FRAME)
---
---  UI:
---    - Kiri: Filter Chat (ScrollingFrame + checkbox)
---    - Kanan: Log + Subtitle (tulisan), + tombol "Chat Filter: ON/OFF"
---  Subtitle 3 baris:
---    - TIDAK di dalam tab, tapi ScreenGui global "AxaSubtitleUI"
---      di bawah tengah layar (seperti contoh script panjangmu).
---
---  Fitur:
---    - Master toggle CHAT_FILTER_ENABLED (ON/OFF)
---    - Filter:
---        1. All Chat
---        2. System Info
---        3. Special UserID / koneksi (chat)
---        4. System Info Special UserID / koneksi
---        5. Chat khusus Mirethos / Kaelvorn
---        6. Subtitle hanya player terdekat (~17 studs)
---    - Relay ke Discord (multi webhook) + embed YAML
---    - History file "historychat.txt" via multipart
---    - Subtitle 3 baris (global, di bawah layar)
---    - STT RemoteEvent + BindableEvent + _G.AxaChatRelay_ReceiveSTT
 --==========================================================
 
-------------------------------------------------
---  ENV DARI CORE (fallback kalau standalone)
-------------------------------------------------
 local Players            = Players            or game:GetService("Players")
 local HttpService        = HttpService        or game:GetService("HttpService")
 local TextChatService    = TextChatService    or game:GetService("TextChatService")
