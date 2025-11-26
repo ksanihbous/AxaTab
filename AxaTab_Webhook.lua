@@ -1,779 +1,682 @@
---------------------------------------------------
--- AxaTab_Webhook - Backpack View → Discord
--- Dipanggil oleh CORE via loadstring, env punya:
---   TAB_ID, TAB_FRAME, CONTENT_HOLDER, Players, HttpService, dll
---------------------------------------------------
+--==========================================================
+--  AxaTab_ChatPublik.lua
+--  Dipanggil via AxaHub CORE (loadstring + env TAB_FRAME)
+--  Fitur:
+--    - UI Filter Chat (All / System / Special / Caught Mirethos/Kaelvorn)
+--    - ScrollingFrame untuk checkbox checklist (biar nggak keluar header)
+--    - Log Chat + Subtitle besar bawah
+--    - Integrasi STT: _G.AxaChatRelay_ReceiveSTT(player, text, channelType)
+--    - Webhook (kalau WEBHOOK_URL diisi)
+--==========================================================
+
+-- Env dari CORE:
+--  TAB_FRAME, CONTENT_HOLDER, AXA_TWEEN
+--  Players, LocalPlayer, RunService, TweenService, HttpService
+--  UserInputService, VirtualInputManager, ContextActionService
+--  StarterGui, CoreGui, Camera, SetActiveTab
 
 --------------------------------------------------
--- FRAME TAB (PAKAI DARI CORE)
+-- SAFETY: fallback kalau env nggak ada (debug mandiri)
 --------------------------------------------------
-local webhookTabFrame = TAB_FRAME
+local okEnv = (typeof(TAB_FRAME) == "Instance")
 
--- fallback kalau TAB_FRAME belum ada (misal test standalone)
-if not webhookTabFrame or not webhookTabFrame.Parent then
-    local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-    local holder = CONTENT_HOLDER
-    if not holder then
-        holder = Instance.new("Frame")
-        holder.Name = "ContentHolder_Fallback"
-        holder.Size = UDim2.new(0, 480, 0, 280)
-        holder.Position = UDim2.new(0.5, -240, 0.5, -140)
-        holder.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
-        holder.Parent = playerGui
-        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 12); c.Parent = holder
-    end
+local Players              = Players              or game:GetService("Players")
+local LocalPlayer          = LocalPlayer          or Players.LocalPlayer
+local RunService           = RunService           or game:GetService("RunService")
+local TweenService         = TweenService         or game:GetService("TweenService")
+local HttpService          = HttpService          or game:GetService("HttpService")
+local UserInputService     = UserInputService     or game:GetService("UserInputService")
+local VirtualInputManager  = VirtualInputManager  or game:GetService("VirtualInputManager")
+local ContextActionService = ContextActionService or game:GetService("ContextActionService")
+local StarterGui           = StarterGui           or game:GetService("StarterGui")
+local CoreGui              = CoreGui              or game:GetService("CoreGui")
 
-    webhookTabFrame = Instance.new("Frame")
-    webhookTabFrame.Name = "TabContent_webhook"
-    webhookTabFrame.Size = UDim2.new(1, -16, 1, -16)
-    webhookTabFrame.Position = UDim2.new(0, 8, 0, 8)
-    webhookTabFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
-    webhookTabFrame.BorderSizePixel = 0
-    webhookTabFrame.Parent = holder
+local TextChatService = nil
+pcall(function()
+    TextChatService = game:GetService("TextChatService")
+end)
+
+local playerGui
+pcall(function()
+    playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+end)
+
+local chatTabFrame
+
+if okEnv then
+    chatTabFrame = TAB_FRAME
+else
+    -- Fallback: bikin ScreenGui sendiri (kalau dijalankan lepas dari CORE)
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AxaTab_ChatPublik_Standalone"
+    screenGui.IgnoreGuiInset = true
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    screenGui.Parent = playerGui or CoreGui
+
+    chatTabFrame = Instance.new("Frame")
+    chatTabFrame.Name = "ChatPublikRoot"
+    chatTabFrame.Size = UDim2.new(0, 520, 0, 320)
+    chatTabFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    chatTabFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    chatTabFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
+    chatTabFrame.Parent = screenGui
 
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, 12)
-    c.Parent = webhookTabFrame
+    c.Parent = chatTabFrame
+end
 
-    local s = Instance.new("UIStroke")
-    s.Thickness = 1
-    s.Color = Color3.fromRGB(210, 210, 225)
-    s.Transparency = 0.3
-    s.Parent = webhookTabFrame
+chatTabFrame.ClipsDescendants = true
+chatTabFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
+chatTabFrame.BackgroundTransparency = 0
+
+-- Bersihkan isi lama (kecuali UICorner/UIStroke dari CORE)
+for _, child in ipairs(chatTabFrame:GetChildren()) do
+    if not child:IsA("UICorner") and not child:IsA("UIStroke") then
+        child:Destroy()
+    end
 end
 
 --------------------------------------------------
--- SERVICE / ENV
+--  CONFIG
 --------------------------------------------------
-local Players     = (typeof(Players) == "table" or typeof(Players) == "userdata") and Players or game:GetService("Players")
-local HttpService = HttpService or game:GetService("HttpService")
+-- Isi webhook kamu di sini kalau mau kirim ke Discord
+local WEBHOOK_URL = "" -- contoh: "https://discord.com/api/webhooks/xxxxx/yyyy"
 
-local WEBHOOK_URL    = "https://discord.com/api/webhooks/1440379761389080597/yRL_Ek5RSttD-cMVPE6f0VtfpuRdMcVOjq4IkqtFOycPKjwFCiojViQGwXd_7AqXRM2P"
-local BOT_AVATAR_URL = "https://mylogo.edgeone.app/Logo%20Ax%20(NO%20BG).png"
-local MAX_DESC       = 3600
-
-local FISH_KEYWORDS = {
-    "ikan","fish","mirethos","kaelvorn","kraken",
-    "shark","whale","ray","eel","salmon","tuna","cod"
+-- Filter state default
+local FilterState = {
+    AllChat          = true,  -- 1. All Chat
+    SystemInfo       = true,  -- 2. System Info
+    SpecialChat      = true,  -- 3. Special UserID / koneksi (chat)
+    SpecialSystem    = true,  -- 4. System Info Special UserID / koneksi
+    MythicCatch      = true,  -- 5. caught Mirethos / Kaelvorn
 }
 
-local FAVORITE_FISH_NAMES = {
-    "lumba pink",
-    "lele",
-    "mirethos",
-    "kaelvorn",
+-- Daftar Special UserID / koneksi (contoh, isi sesuai punyamu)
+local SPECIAL_USER_IDS = {
+    [8957393843] = "AxaXyz999xBBHY",
+    -- [UserId] = "Nama / Keterangan",
 }
 
-local function safeLower(s)
-    return (typeof(s) == "string") and s:lower() or ""
+--------------------------------------------------
+--  UI HEADER + DESC
+--------------------------------------------------
+local header = Instance.new("TextLabel")
+header.Name = "Header"
+header.Size = UDim2.new(1, -10, 0, 22)
+header.Position = UDim2.new(0, 5, 0, 6)
+header.BackgroundTransparency = 1
+header.Font = Enum.Font.GothamBold
+header.TextSize = 15
+header.TextColor3 = Color3.fromRGB(40, 40, 60)
+header.TextXAlignment = Enum.TextXAlignment.Left
+header.Text = "💬 CHAT PUBLIK HG + IC"
+header.Parent = chatTabFrame
+
+local desc = Instance.new("TextLabel")
+desc.Name = "Desc"
+desc.Size = UDim2.new(1, -10, 0, 34)
+desc.Position = UDim2.new(0, 5, 0, 26)
+desc.BackgroundTransparency = 1
+desc.Font = Enum.Font.Gotham
+desc.TextSize = 12
+desc.TextColor3 = Color3.fromRGB(90, 90, 120)
+desc.TextXAlignment = Enum.TextXAlignment.Left
+desc.TextYAlignment = Enum.TextYAlignment.Top
+desc.TextWrapped = true
+desc.Text = "Filter chat publik + system info + Special UserID, sekaligus relay ke Discord + subtitle besar untuk dibaca."
+desc.Parent = chatTabFrame
+
+--------------------------------------------------
+--  PANEL KIRI: FILTER + SCROLLINGFRAME CHECKBOX
+--------------------------------------------------
+local leftPanel = Instance.new("Frame")
+leftPanel.Name = "LeftPanel"
+leftPanel.BackgroundTransparency = 1
+leftPanel.Position = UDim2.new(0, 8, 0, 64)
+leftPanel.Size = UDim2.new(0.42, -8, 1, -72)
+leftPanel.Parent = chatTabFrame
+
+local leftTitle = Instance.new("TextLabel")
+leftTitle.Name = "LeftTitle"
+leftTitle.Size = UDim2.new(1, 0, 0, 20)
+leftTitle.Position = UDim2.new(0, 0, 0, 0)
+leftTitle.BackgroundTransparency = 1
+leftTitle.Font = Enum.Font.GothamBold
+leftTitle.TextSize = 13
+leftTitle.TextColor3 = Color3.fromRGB(40, 40, 60)
+leftTitle.TextXAlignment = Enum.TextXAlignment.Left
+leftTitle.Text = "Filter Chat"
+leftTitle.Parent = leftPanel
+
+local filterOutline = Instance.new("Frame")
+filterOutline.Name = "FilterOutline"
+filterOutline.Position = UDim2.new(0, 0, 0, 22)
+filterOutline.Size = UDim2.new(1, 0, 1, -22)
+filterOutline.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
+filterOutline.BorderSizePixel = 0
+filterOutline.Parent = leftPanel
+
+local foCorner = Instance.new("UICorner")
+foCorner.CornerRadius = UDim.new(0, 8)
+foCorner.Parent = filterOutline
+
+local foStroke = Instance.new("UIStroke")
+foStroke.Thickness = 1
+foStroke.Color = Color3.fromRGB(200, 200, 215)
+foStroke.Transparency = 0.4
+foStroke.Parent = filterOutline
+
+-- ScrollingFrame tempat semua checkbox checklist (supaya tidak keluar dari header / panel)
+local filterScroll = Instance.new("ScrollingFrame")
+filterScroll.Name = "FilterScroll"
+filterScroll.Position = UDim2.new(0, 4, 0, 4)
+filterScroll.Size = UDim2.new(1, -8, 1, -8)
+filterScroll.BackgroundTransparency = 1
+filterScroll.BorderSizePixel = 0
+filterScroll.ScrollBarThickness = 4
+filterScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+filterScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+filterScroll.Parent = filterOutline
+
+local filterLayout = Instance.new("UIListLayout")
+filterLayout.FillDirection = Enum.FillDirection.Vertical
+filterLayout.SortOrder = Enum.SortOrder.LayoutOrder
+filterLayout.Padding = UDim.new(0, 4)
+filterLayout.Parent = filterScroll
+
+local function updateFilterCanvas()
+    local abs = filterLayout.AbsoluteContentSize
+    filterScroll.CanvasSize = UDim2.new(0, 0, 0, abs.Y + 8)
 end
 
-local function isFavoriteBaseName(baseName)
-    local l = safeLower(baseName)
-    for _, fav in ipairs(FAVORITE_FISH_NAMES) do
-        if l:find(fav, 1, true) then
-            return true
-        end
+filterLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateFilterCanvas)
+
+-- Definisi filter (urutan dan teks, supaya gampang diubah)
+local FILTER_DEFS = {
+    {
+        id    = "AllChat",
+        label = "1. All Chat (semua pesan)",
+    },
+    {
+        id    = "SystemInfo",
+        label = "2. System Info (server / notifikasi game)",
+    },
+    {
+        id    = "SpecialChat",
+        label = "3. Special UserID / koneksi (chat)",
+    },
+    {
+        id    = "SpecialSystem",
+        label = "4. System Info Special UserID / koneksi",
+    },
+    {
+        id    = "MythicCatch",
+        label = "5. Filter khusus: \"caught a Mirethos\" / \"caught a Kaelvorn\"",
+    },
+}
+
+local filterButtons = {}
+
+local function setCheckboxVisual(btn, on)
+    if on then
+        btn.Text = "✔"
+        btn.BackgroundColor3 = Color3.fromRGB(90, 160, 250)
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        btn.Text = ""
+        btn.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
+        btn.TextColor3 = Color3.fromRGB(80, 80, 110)
+    end
+end
+
+local function makeFilterRow(def)
+    local row = Instance.new("Frame")
+    row.Name = "Filter_" .. def.id
+    row.Size = UDim2.new(1, 0, 0, 26)
+    row.BackgroundTransparency = 1
+    row.Parent = filterScroll
+
+    local check = Instance.new("TextButton")
+    check.Name = "Check"
+    check.Size = UDim2.fromOffset(20, 20)
+    check.Position = UDim2.new(0, 2, 0, 3)
+    check.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
+    check.BorderSizePixel = 0
+    check.Font = Enum.Font.GothamBold
+    check.TextSize = 14
+    check.TextColor3 = Color3.fromRGB(80, 80, 110)
+    check.AutoButtonColor = true
+    check.Text = ""
+    check.Parent = row
+    Instance.new("UICorner", check).CornerRadius = UDim.new(0, 4)
+
+    local label = Instance.new("TextButton")
+    label.Name = "Label"
+    label.Size = UDim2.new(1, -30, 1, 0)
+    label.Position = UDim2.new(0, 28, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = Color3.fromRGB(40, 40, 70)
+    label.Text = def.label
+    label.AutoButtonColor = false
+    label.Parent = row
+
+    local function toggle()
+        FilterState[def.id] = not not (not FilterState[def.id] and true or false) -- force boolean
+        FilterState[def.id] = not FilterState[def.id] == false and true or FilterState[def.id]
+    end
+
+    -- Biar nggak ribet: simple toggle
+    local function setFromState()
+        local on = FilterState[def.id] ~= false -- default true kalau nil
+        FilterState[def.id] = on
+        setCheckboxVisual(check, on)
+    end
+
+    check.MouseButton1Click:Connect(function()
+        FilterState[def.id] = not FilterState[def.id]
+        setFromState()
+    end)
+
+    label.MouseButton1Click:Connect(function()
+        FilterState[def.id] = not FilterState[def.id]
+        setFromState()
+    end)
+
+    filterButtons[def.id] = {
+        Row   = row,
+        Check = check,
+        Label = label,
+        Set   = setFromState,
+    }
+
+    setFromState()
+end
+
+for _, def in ipairs(FILTER_DEFS) do
+    makeFilterRow(def)
+end
+updateFilterCanvas()
+
+--------------------------------------------------
+--  PANEL KANAN: LOG CHAT + SUBTITLE
+--------------------------------------------------
+local rightPanel = Instance.new("Frame")
+rightPanel.Name = "RightPanel"
+rightPanel.BackgroundTransparency = 1
+rightPanel.Position = UDim2.new(0.44, 0, 0, 64)
+rightPanel.Size = UDim2.new(0.56, -8, 1, -72)
+rightPanel.Parent = chatTabFrame
+
+local rightTitle = Instance.new("TextLabel")
+rightTitle.Name = "RightTitle"
+rightTitle.Size = UDim2.new(1, 0, 0, 20)
+rightTitle.Position = UDim2.new(0, 0, 0, 0)
+rightTitle.BackgroundTransparency = 1
+rightTitle.Font = Enum.Font.GothamBold
+rightTitle.TextSize = 13
+rightTitle.TextColor3 = Color3.fromRGB(40, 40, 60)
+rightTitle.TextXAlignment = Enum.TextXAlignment.Left
+rightTitle.Text = "Log + Subtitle"
+rightTitle.Parent = rightPanel
+
+local logFrame = Instance.new("Frame")
+logFrame.Name = "LogFrame"
+logFrame.Position = UDim2.new(0, 0, 0, 22)
+logFrame.Size = UDim2.new(1, 0, 1, -60)
+logFrame.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
+logFrame.BorderSizePixel = 0
+logFrame.Parent = rightPanel
+
+local logCorner = Instance.new("UICorner")
+logCorner.CornerRadius = UDim.new(0, 8)
+logCorner.Parent = logFrame
+
+local logStroke = Instance.new("UIStroke")
+logStroke.Thickness = 1
+logStroke.Color = Color3.fromRGB(200, 200, 215)
+logStroke.Transparency = 0.4
+logStroke.Parent = logFrame
+
+local logScroll = Instance.new("ScrollingFrame")
+logScroll.Name = "LogScroll"
+logScroll.Position = UDim2.new(0, 4, 0, 4)
+logScroll.Size = UDim2.new(1, -8, 1, -8)
+logScroll.BackgroundTransparency = 1
+logScroll.BorderSizePixel = 0
+logScroll.ScrollBarThickness = 4
+logScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+logScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+logScroll.Parent = logFrame
+
+local logLayout = Instance.new("UIListLayout")
+logLayout.FillDirection = Enum.FillDirection.Vertical
+logLayout.SortOrder = Enum.SortOrder.LayoutOrder
+logLayout.Padding = UDim.new(0, 2)
+logLayout.Parent = logScroll
+
+local function updateLogCanvas()
+    local abs = logLayout.AbsoluteContentSize
+    logScroll.CanvasSize = UDim2.new(0, 0, 0, abs.Y + 8)
+end
+
+logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    updateLogCanvas()
+    -- auto scroll ke bawah
+    logScroll.CanvasPosition = Vector2.new(0, math.max(0, logScroll.CanvasSize.Y.Offset - logScroll.AbsoluteWindowSize.Y))
+end)
+
+-- Subtitle besar bawah
+local subtitleFrame = Instance.new("Frame")
+subtitleFrame.Name = "SubtitleFrame"
+subtitleFrame.Size = UDim2.new(1, 0, 0, 32)
+subtitleFrame.Position = UDim2.new(0, 0, 1, -32)
+subtitleFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+subtitleFrame.BorderSizePixel = 0
+subtitleFrame.Parent = rightPanel
+
+local subCorner = Instance.new("UICorner")
+subCorner.CornerRadius = UDim.new(0, 8)
+subCorner.Parent = subtitleFrame
+
+local subtitleLabel = Instance.new("TextLabel")
+subtitleLabel.Name = "SubtitleLabel"
+subtitleLabel.Size = UDim2.new(1, -10, 1, -4)
+subtitleLabel.Position = UDim2.new(0, 5, 0, 2)
+subtitleLabel.BackgroundTransparency = 1
+subtitleLabel.Font = Enum.Font.GothamBold
+subtitleLabel.TextSize = 14
+subtitleLabel.TextColor3 = Color3.fromRGB(235, 235, 255)
+subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+subtitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+subtitleLabel.TextWrapped = true
+subtitleLabel.Text = "(Subtitle terakhir tampil di sini)"
+subtitleLabel.Parent = subtitleFrame
+
+local subtitleBuffer = {}
+
+local function pushSubtitleLine(text)
+    table.insert(subtitleBuffer, text)
+    while #subtitleBuffer > 3 do
+        table.remove(subtitleBuffer, 1)
+    end
+    subtitleLabel.Text = table.concat(subtitleBuffer, "   |   ")
+end
+
+--------------------------------------------------
+--  UTIL: DETEKSI SPECIAL / MIRETHOS / KAELVORN
+--------------------------------------------------
+local function isSpecialUser(player)
+    if not player then return false end
+    local uid = player.UserId
+    return SPECIAL_USER_IDS[uid] ~= nil
+end
+
+local function isMythicCatch(text)
+    if not text then return false end
+    local lower = string.lower(text)
+    if string.find(lower, "caught a mirethos", 1, true) then
+        return true
+    end
+    if string.find(lower, "caught a kaelvorn", 1, true) then
+        return true
     end
     return false
 end
 
-local function extractFishWeightKg(name)
-    if not name then return nil end
-    local lower = string.lower(name)
-    local numStr = lower:match("(%d+%.?%d*)%s*kg") or lower:match("(%d+%.?%d*)")
-    if not numStr then return nil end
-    local w = tonumber(numStr)
-    if not w then return nil end
-    return w
-end
+--------------------------------------------------
+--  UTIL: FILTER CHECK
+--------------------------------------------------
+local function passFilter(opts)
+    -- opts: {IsSystem, IsSpecialUser, IsMythic, ChannelType}
+    local isSystem   = opts.IsSystem   or false
+    local isSpecial  = opts.IsSpecialUser or false
+    local isMythic   = opts.IsMythic   or false
 
-local function getFishBaseName(rawName)
-    if not rawName or rawName == "" then
-        return "Unknown Fish"
+    -- Filter Mythic catch dulu
+    if isMythic then
+        if FilterState.MythicCatch == false then
+            return false
+        end
+        -- Boleh tembus walau filter lain off
+        return true
     end
 
-    local name = rawName
-    name = name:gsub("%b[]", "")
-    name = name:gsub("%b()", "")
-    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")
-    name = name:gsub("%s*%d+[%d%.]*$", "")
-    name = name:gsub("^%s+", ""):gsub("%s+$", "")
-    if name == "" then
-        name = rawName
-    end
-    return name
-end
-
---------------------------------------------------
--- UI HEADER
---------------------------------------------------
-for _, child in ipairs(webhookTabFrame:GetChildren()) do
-    child:Destroy()
-end
-
-local whHeader = Instance.new("TextLabel")
-whHeader.Name = "Header"
-whHeader.Size = UDim2.new(1, -10, 0, 22)
-whHeader.Position = UDim2.new(0, 5, 0, 6)
-whHeader.BackgroundTransparency = 1
-whHeader.Font = Enum.Font.GothamBold
-whHeader.TextSize = 15
-whHeader.TextColor3 = Color3.fromRGB(40, 40, 60)
-whHeader.TextXAlignment = Enum.TextXAlignment.Left
-whHeader.Text = "📡 Webhook Backpack View"
-whHeader.Parent = webhookTabFrame
-
-local whSub = Instance.new("TextLabel")
-whSub.Name = "Sub"
-whSub.Size = UDim2.new(1, -10, 0, 32)
-whSub.Position = UDim2.new(0, 5, 0, 26)
-whSub.BackgroundTransparency = 1
-whSub.Font = Enum.Font.Gotham
-whSub.TextSize = 12
-whSub.TextColor3 = Color3.fromRGB(90, 90, 120)
-whSub.TextXAlignment = Enum.TextXAlignment.Left
-whSub.TextYAlignment = Enum.TextYAlignment.Top
-whSub.TextWrapped = true
-whSub.Text = "Pilih player (checkbox). Rod & Ikan dinomori per kategori. Auto split Part ke Discord + Total & Ikan Favorite di Part terakhir."
-whSub.Parent = webhookTabFrame
-
-local whSendBtn = Instance.new("TextButton")
-whSendBtn.Name = "SendBtn"
-whSendBtn.Size = UDim2.new(0, 120, 0, 24)
-whSendBtn.AnchorPoint = Vector2.new(1, 0)
-whSendBtn.Position = UDim2.new(1, -8, 0, 10)
-whSendBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 220)
-whSendBtn.Font = Enum.Font.GothamBold
-whSendBtn.TextSize = 13
-whSendBtn.TextColor3 = Color3.fromRGB(255,255,255)
-whSendBtn.Text = "Send to Discord"
-whSendBtn.Parent = webhookTabFrame
-
-local whSendCorner = Instance.new("UICorner")
-whSendCorner.CornerRadius = UDim.new(0, 8)
-whSendCorner.Parent = whSendBtn
-
-local whSelectAll = Instance.new("TextButton")
-whSelectAll.Name = "SelectAll"
-whSelectAll.Size = UDim2.new(0, 80, 0, 24)
-whSelectAll.AnchorPoint = Vector2.new(0, 0)
-whSelectAll.Position = UDim2.new(0, 5, 0, 46)
-whSelectAll.BackgroundColor3 = Color3.fromRGB(220, 220, 230)
-whSelectAll.Font = Enum.Font.GothamBold
-whSelectAll.TextSize = 12
-whSelectAll.TextColor3 = Color3.fromRGB(60, 60, 90)
-whSelectAll.Text = "Select All"
-whSelectAll.Parent = webhookTabFrame
-
-local whSelCorner = Instance.new("UICorner")
-whSelCorner.CornerRadius = UDim.new(0, 8)
-whSelCorner.Parent = whSelectAll
-
-local whSearchBox = Instance.new("TextBox")
-whSearchBox.Name = "SearchBox"
-whSearchBox.Size = UDim2.new(0, 150, 0, 22)
-whSearchBox.Position = UDim2.new(0, 90, 0, 46)
-whSearchBox.BackgroundColor3 = Color3.fromRGB(230, 230, 245)
-whSearchBox.TextColor3 = Color3.fromRGB(80, 80, 110)
-whSearchBox.Font = Enum.Font.Gotham
-whSearchBox.TextSize = 13
-whSearchBox.TextXAlignment = Enum.TextXAlignment.Left
-whSearchBox.ClearTextOnFocus = false
-whSearchBox.Text = ""
-whSearchBox.PlaceholderText = "Search.."
-whSearchBox.Parent = webhookTabFrame
-
-local whSearchCorner = Instance.new("UICorner")
-whSearchCorner.CornerRadius = UDim.new(0, 8)
-whSearchCorner.Parent = whSearchBox
-
-local whStatus = Instance.new("TextLabel")
-whStatus.Name = "Status"
-whStatus.Size = UDim2.new(1, -10, 0, 18)
-whStatus.Position = UDim2.new(0, 5, 1, -24)
-whStatus.BackgroundTransparency = 1
-whStatus.Font = Enum.Font.Gotham
-whStatus.TextSize = 12
-whStatus.TextColor3 = Color3.fromRGB(90, 90, 120)
-whStatus.TextXAlignment = Enum.TextXAlignment.Left
-whStatus.Text = "Status: Ready"
-whStatus.Parent = webhookTabFrame
-
-local whList = Instance.new("ScrollingFrame")
-whList.Name = "WebhookList"
-whList.Position = UDim2.new(0, 5, 0, 74)
-whList.Size = UDim2.new(1, -10, 1, -104)
-whList.BackgroundTransparency = 1
-whList.BorderSizePixel = 0
-whList.ScrollBarThickness = 4
-whList.CanvasSize = UDim2.new(0, 0, 0, 0)
-whList.Parent = webhookTabFrame
-
-local whLayout = Instance.new("UIListLayout")
-whLayout.FillDirection = Enum.FillDirection.Vertical
-whLayout.SortOrder = Enum.SortOrder.Name
-whLayout.Padding = UDim.new(0, 4)
-whLayout.Parent = whList
-
-whLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    whList.CanvasSize = UDim2.new(0, 0, 0, whLayout.AbsoluteContentSize.Y + 10)
-end)
-
---------------------------------------------------
--- ROW LIST & FILTER
---------------------------------------------------
-local whRows           = {}
-local whSelected       = {}
-local whSelectAllState = false
-
-local function setWebhookStatus(msg)
-    whStatus.Text = "Status: " .. msg
-end
-
-local function webhookMatchesSearch(pl)
-    local q = string.lower(whSearchBox.Text or "")
-    if q == "" then return true end
-    local dn = string.lower(pl.DisplayName or pl.Name)
-    local un = string.lower(pl.Name)
-    return dn:find(q, 1, true) or un:find(q, 1, true)
-end
-
-local function applyWebhookSearchFilter()
-    for pl, row in pairs(whRows) do
-        local match = webhookMatchesSearch(pl)
-        row.Visible = match
-        if match then
-            row.Size = UDim2.new(1, 0, 0, 32)
+    -- System info?
+    if isSystem then
+        if isSpecial then
+            if FilterState.SpecialSystem == false then
+                return false
+            end
         else
-            row.Size = UDim2.new(1, 0, 0, 0)
-        end
-    end
-end
-
-local function createWebhookRow(player)
-    local row = Instance.new("Frame")
-    row.Name = player.Name
-    row.Size = UDim2.new(1, 0, 0, 32)
-    row.BackgroundColor3 = Color3.fromRGB(230, 230, 244)
-    row.BackgroundTransparency = 0.1
-    row.BorderSizePixel = 0
-    row.Parent = whList
-
-    local rc = Instance.new("UICorner")
-    rc.CornerRadius = UDim.new(0, 8)
-    rc.Parent = row
-
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Name = "Name"
-    nameLabel.Size = UDim2.new(1, -60, 1, 0)
-    nameLabel.Position = UDim2.new(0, 8, 0, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Font = Enum.Font.Gotham
-    nameLabel.TextSize = 13
-    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.TextColor3 = Color3.fromRGB(60, 60, 90)
-    nameLabel.Text = string.format("%s (@%s)", player.DisplayName or player.Name, player.Name)
-    nameLabel.Parent = row
-
-    local chkBtn = Instance.new("TextButton")
-    chkBtn.Name = "Check"
-    chkBtn.Size = UDim2.new(0, 28, 0, 24)
-    chkBtn.AnchorPoint = Vector2.new(1, 0.5)
-    chkBtn.Position = UDim2.new(1, -6, 0.5, 0)
-    chkBtn.BackgroundColor3 = Color3.fromRGB(215, 215, 230)
-    chkBtn.Font = Enum.Font.GothamBold
-    chkBtn.TextSize = 16
-    chkBtn.TextColor3 = Color3.fromRGB(60, 60, 90)
-    chkBtn.Text = "☐"
-    chkBtn.Parent = row
-
-    local cc = Instance.new("UICorner")
-    cc.CornerRadius = UDim.new(0, 6)
-    cc.Parent = chkBtn
-
-    local function applyState()
-        local sel = not not whSelected[player]
-        chkBtn.Text = sel and "☑" or "☐"
-        chkBtn.BackgroundColor3 = sel and Color3.fromRGB(140, 190, 255) or Color3.fromRGB(215, 215, 230)
-    end
-
-    chkBtn.MouseButton1Click:Connect(function()
-        whSelected[player] = not whSelected[player]
-        applyState()
-    end)
-
-    whRows[player] = row
-    whSelected[player] = false
-    applyState()
-end
-
-local function removeWebhookRow(player)
-    local row = whRows[player]
-    if row then
-        row:Destroy()
-        whRows[player] = nil
-    end
-    whSelected[player] = nil
-end
-
-local function refreshWebhookList()
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if not whRows[pl] then
-            createWebhookRow(pl)
-        end
-    end
-
-    for pl, _ in pairs(whRows) do
-        local stillHere = false
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == pl then
-                stillHere = true
-                break
+            if FilterState.SystemInfo == false then
+                return false
             end
         end
-        if not stillHere then
-            removeWebhookRow(pl)
-        end
+        return true
     end
 
-    applyWebhookSearchFilter()
-end
-
-whSearchBox:GetPropertyChangedSignal("Text"):Connect(applyWebhookSearchFilter)
-
-Players.PlayerAdded:Connect(function(pl)
-    createWebhookRow(pl)
-    applyWebhookSearchFilter()
-end)
-
-Players.PlayerRemoving:Connect(function(pl)
-    removeWebhookRow(pl)
-end)
-
-refreshWebhookList()
-
-whSelectAll.MouseButton1Click:Connect(function()
-    whSelectAllState = not whSelectAllState
-
-    for pl, row in pairs(whRows) do
-        whSelected[pl] = whSelectAllState
-        local chk = row:FindFirstChild("Check")
-        if chk and chk:IsA("TextButton") then
-            chk.Text = whSelectAllState and "☑" or "☐"
-            chk.BackgroundColor3 = whSelectAllState and Color3.fromRGB(140, 190, 255)
-                or Color3.fromRGB(215,215,230)
+    -- Chat biasa
+    if not FilterState.AllChat then
+        -- Kalau AllChat dimatikan, tapi dia SpecialChat & filter special ON, boleh lewat
+        if isSpecial and FilterState.SpecialChat then
+            return true
         end
+        return false
     end
 
-    whSelectAll.Text = whSelectAllState and "Unselect All" or "Select All"
-end)
-
---------------------------------------------------
--- BACKPACK → KATEGORI
---------------------------------------------------
-local function getBackpackCategoriesForWebhook(player)
-    local rods, fish, others = {}, {}, {}
-
-    local function classifyTool(tool)
-        local name  = tool.Name
-        local lower = string.lower(name)
-
-        if lower:find("rod") or lower:find("pancing") then
-            table.insert(rods, name)
-            return
-        end
-
-        for _, kw in ipairs(FISH_KEYWORDS) do
-            if lower:find(kw, 1, true) then
-                table.insert(fish, name)
-                return
-            end
-        end
-
-        table.insert(others, name)
+    -- AllChat ON
+    if isSpecial and not FilterState.SpecialChat then
+        -- Kalau special chat dimatikan, skip yang special
+        return false
     end
 
-    local function scan(container)
-        if not container then return end
-        for _, child in ipairs(container:GetChildren()) do
-            if child:IsA("Tool") then
-                classifyTool(child)
-            end
-        end
-    end
-
-    scan(player:FindFirstChild("Backpack"))
-    scan(player.Character)
-
-    return rods, fish, others
-end
-
-local function buildWebhookBlockForPlayer(pl, rods, fish, others)
-    if not rods or not fish or not others then
-        rods, fish, others = getBackpackCategoriesForWebhook(pl)
-    end
-
-    local parts = {}
-
-    table.insert(parts, string.format("**%s (@%s)**", pl.DisplayName or pl.Name, pl.Name))
-
-    local function addCategory(label, list)
-        if #list == 0 then return end
-        table.insert(parts, label .. ":")
-        for i, itemName in ipairs(list) do
-            table.insert(parts, string.format("  %d. %s", i, itemName))
-        end
-    end
-
-    addCategory("Rod",     rods)
-    addCategory("Ikan",    fish)
-    addCategory("Lainnya", others)
-
-    return table.concat(parts, "\n")
+    return true
 end
 
 --------------------------------------------------
--- HTTP → DISCORD
+--  UTIL: TAMBAH BARIS LOG + KIRIM WEBHOOK
 --------------------------------------------------
-local function getRequestFunction()
-    local g = getgenv and getgenv() or _G
-    local req =
-        (syn and syn.request)
-        or (g and (g.request or g.http_request))
-        or (g and g.http_request)
-        or (http and (http.request or http_request))
-        or http_request
-        or request
+local function addLogLine(opts)
+    -- opts: Player, Text, ChannelType, IsSystem, IsSpecialUser, IsMythic, Source
+    local player       = opts.Player
+    local text         = opts.Text or ""
+    local channelType  = opts.ChannelType or "Chat"
+    local isSystem     = opts.IsSystem or false
+    local isSpecial    = opts.IsSpecialUser or false
+    local isMythic     = opts.IsMythic or false
+    local source       = opts.Source or "Text"
 
-    return req
-end
-
-local function postDiscord(payloadTable)
-    local body = HttpService:JSONEncode(payloadTable)
-
-    local req = getRequestFunction()
-    if req then
-        local ok, res = pcall(function()
-            return req({
-                Url     = WEBHOOK_URL,
-                Method  = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body    = body
-            })
-        end)
-
-        if ok then
-            local status = res and (res.StatusCode or res.Status) or nil
-            if status == nil or status == 200 or status == 204 then
-                return true, nil
-            end
-            return false, "HTTP status " .. tostring(status)
-        else
-            return false, "Executor request error"
-        end
-    end
-
-    local ok, errMsg = pcall(function()
-        return HttpService:PostAsync(
-            WEBHOOK_URL,
-            body,
-            Enum.HttpContentType.ApplicationJson,
-            false
-        )
-    end)
-
-    if not ok then
-        warn("[Axa Backview] Gagal kirim webhook:", errMsg)
-    end
-
-    return ok, errMsg
-end
-
---------------------------------------------------
--- UTIL SPLIT TEKS
---------------------------------------------------
-local function splitTextByLength(text, maxLen)
-    local chunks = {}
-    local current = ""
-
-    for line in (text .. "\n"):gmatch("(.-)\n") do
-        if #current == 0 then
-            current = line
-        else
-            local candidate = current .. "\n" .. line
-            if #candidate > maxLen then
-                table.insert(chunks, current)
-                current = line
-            else
-                current = candidate
-            end
-        end
-    end
-
-    if #current > 0 then
-        table.insert(chunks, current)
-    end
-
-    return chunks
-end
-
---------------------------------------------------
--- KUMPUL & KIRIM
---------------------------------------------------
-local function sendWebhookBackview()
-    local blocks = {}
-
-    local totalRods   = 0
-    local totalFish   = 0
-    local totalOthers = 0
-
-    local range_1_100    = 0
-    local range_101_400  = 0
-    local range_401_599  = 0
-    local range_600_799  = 0
-    local range_801_1000 = 0
-
-    local fishNameCounts = {}
-    local fishMaxWeight  = {}
-    local favoriteFishEntries = {}
-
-    for pl, _ in pairs(whRows) do
-        if whSelected[pl] and pl and pl.Parent == Players then
-            local rods, fish, others = getBackpackCategoriesForWebhook(pl)
-
-            totalRods   = totalRods   + #rods
-            totalFish   = totalFish   + #fish
-            totalOthers = totalOthers + #others
-
-            for _, fishName in ipairs(fish) do
-                local baseName = getFishBaseName(fishName)
-                fishNameCounts[baseName] = (fishNameCounts[baseName] or 0) + 1
-
-                local w = extractFishWeightKg(fishName)
-                if w then
-                    local curMax = fishMaxWeight[baseName]
-                    if not curMax or w > curMax then
-                        fishMaxWeight[baseName] = w
-                    end
-
-                    if w >= 1 and w <= 100 then
-                        range_1_100 = range_1_100 + 1
-                    elseif w >= 101 and w <= 400 then
-                        range_101_400 = range_101_400 + 1
-                    elseif w >= 401 and w <= 599 then
-                        range_401_599 = range_401_599 + 1
-                    elseif w >= 600 and w <= 799 then
-                        range_600_799 = range_600_799 + 1
-                    elseif w >= 800 and w <= 1000 then
-                        range_801_1000 = range_801_1000 + 1
-                    end
-                end
-
-                local lowerFishName = string.lower(fishName)
-                if lowerFishName:find("(favorite)", 1, true) or isFavoriteBaseName(baseName) then
-                    table.insert(favoriteFishEntries, {
-                        rawName  = fishName,
-                        baseName = baseName,
-                        weight   = w or 0
-                    })
-                end
-            end
-
-            table.insert(blocks, buildWebhookBlockForPlayer(pl, rods, fish, others))
-        end
-    end
-
-    if #blocks == 0 then
-        setWebhookStatus("Tidak ada player yang dicentang.")
+    if not passFilter(opts) then
         return
     end
 
-    local baseDesc = table.concat(blocks, "\n\n")
+    local playerName   = player and player.Name or "System"
+    local displayName  = player and player.DisplayName or playerName
 
-    local summaryLines = {}
-    local totalTools = totalRods + totalFish + totalOthers
+    local prefixParts = {}
+    table.insert(prefixParts, "[" .. channelType .. "]")
+    if isSystem then
+        table.insert(prefixParts, "[SYSTEM]")
+    end
+    if isSpecial then
+        table.insert(prefixParts, "[SPECIAL]")
+    end
+    if isMythic then
+        table.insert(prefixParts, "[MIRETHOS/KAELVORN]")
+    end
+    if source == "STT" then
+        table.insert(prefixParts, "[STT]")
+    end
 
-    table.insert(summaryLines, string.format(
-        "**Total Rod:** %d  |  **Total Ikan:** %d  |  **Total Tools:** %d",
-        totalRods, totalFish, totalTools
-    ))
+    local prefix = table.concat(prefixParts, " ")
+    local lineText = string.format("%s %s (%s): %s", prefix, displayName, playerName, text)
 
-    table.insert(summaryLines, string.format(
-        "**Total Berat Ikan (range):** 1-100 kg: %d, 101-400 kg: %d, 401-599 kg: %d, 600-799 kg: %d, 801-1000 kg: %d",
-        range_1_100, range_101_400, range_401_599, range_600_799, range_801_1000
-    ))
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -8, 0, 18)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
 
-    if next(fishNameCounts) ~= nil then
-        table.insert(summaryLines, "")
-        table.insert(summaryLines, "**Jumlah per Nama Ikan:**")
+    if isMythic then
+        -- Warna pink khusus Mirethos/Kaelvorn
+        lbl.TextColor3 = Color3.fromRGB(255, 120, 200)
+    elseif isSpecial then
+        lbl.TextColor3 = Color3.fromRGB(255, 210, 120)
+    elseif isSystem then
+        lbl.TextColor3 = Color3.fromRGB(255, 235, 150)
+    else
+        lbl.TextColor3 = Color3.fromRGB(40, 40, 70)
+    end
 
-        local fishArray = {}
-        for name, count in pairs(fishNameCounts) do
-            table.insert(fishArray, {
-                name      = name,
-                count     = count,
-                maxWeight = fishMaxWeight[name] or 0
-            })
+    lbl.Text = lineText
+    lbl.Parent = logScroll
+
+    pushSubtitleLine(string.format("%s: %s", displayName, text))
+
+    -- Optional: kirim ke Discord
+    if WEBHOOK_URL ~= "" then
+        -- warna embed
+        local color = 0xFFD778 -- default kuning
+        if isMythic then
+            color = 0xFF78C8 -- pink
+        elseif isSpecial then
+            color = 0xFFE37A
+        elseif isSystem then
+            color = 0xFFE37A
         end
 
-        table.sort(fishArray, function(a, b)
-            if a.count == b.count then
-                return a.name:lower() < b.name:lower()
-            end
-            return a.count > b.count
-        end)
-
-        local MAX_FISH_SUMMARY = 25
-        local shown = 0
-        local totalSpecies = #fishArray
-
-        for _, entry in ipairs(fishArray) do
-            if shown >= MAX_FISH_SUMMARY then
-                local remaining = totalSpecies - shown
-                if remaining > 0 then
-                    table.insert(summaryLines, string.format("  ...(+%d jenis ikan lainnya)", remaining))
-                end
-                break
-            end
-            if entry.maxWeight > 0 then
-                table.insert(summaryLines, string.format(
-                    "  - %s: %d (max %.1f Kg)",
-                    entry.name, entry.count, entry.maxWeight
-                ))
-            else
-                table.insert(summaryLines, string.format(
-                    "  - %s: %d",
-                    entry.name, entry.count
-                ))
-            end
-            shown += 1
-        end
-    end
-
-    if #favoriteFishEntries > 0 then
-        table.insert(summaryLines, "")
-        table.insert(summaryLines, "**Ikan Favorite:**")
-        table.sort(favoriteFishEntries, function(a, b)
-            return a.baseName:lower() < b.baseName:lower()
-        end)
-        for i, entry in ipairs(favoriteFishEntries) do
-            if entry.weight and entry.weight > 0 then
-                table.insert(summaryLines, string.format(
-                    "%d. %s (%.1f Kg) (Favorite)",
-                    i, entry.baseName, entry.weight
-                ))
-            else
-                table.insert(summaryLines, string.format(
-                    "%d. %s (Favorite)",
-                    i, entry.baseName
-                ))
-            end
-        end
-    end
-
-    local totalsText = table.concat(summaryLines, "\n")
-
-    local baseChunks = {}
-    if baseDesc ~= "" then
-        baseChunks = splitTextByLength(baseDesc, MAX_DESC)
-    end
-
-    local summaryChunks = {}
-    if totalsText ~= "" then
-        summaryChunks = splitTextByLength(totalsText, MAX_DESC)
-    end
-
-    local totalParts = #baseChunks + #summaryChunks
-    if totalParts == 0 then
-        setWebhookStatus("Tidak ada data backpack untuk dikirim.")
-        return
-    end
-
-    local allOk    = true
-    local firstErr = nil
-    local partIndex = 0
-
-    local function sendOnePart(desc, isSummary)
-        partIndex += 1
-
-        local title
-        if isSummary then
-            if totalParts > 1 then
-                title = string.format("📊 Ringkasan & Ikan Favorite (Part %d/%d)", partIndex, totalParts)
-            else
-                title = "📊 Ringkasan & Ikan Favorite"
-            end
-        else
-            if totalParts > 1 then
-                title = string.format("🎒 Backpack View (Part %d/%d)", partIndex, totalParts)
-            else
-                title = "🎒 Backpack View"
-            end
-        end
-
-        local payload = {
-            username   = "Axa Backview",
-            avatar_url = BOT_AVATAR_URL,
-            embeds = {{
-                title       = title,
-                description = desc,
-                color       = 0x5b8def
-            }}
+        local embed = {
+            title = "Chat Publik HG + IC",
+            description = lineText,
+            color = color,
+            footer = {
+                text = os.date("!%Y-%m-%d %H:%M:%S UTC"),
+            },
+            fields = {
+                {
+                    name = "Channel / Source",
+                    value = string.format("`%s / %s`", channelType, source),
+                    inline = true,
+                },
+            },
         }
 
-        local ok, err = postDiscord(payload)
-        if not ok then
-            allOk    = false
-            firstErr = firstErr or err
-        end
-    end
+        local body = HttpService:JSONEncode({
+            username = "Axa ChatPublik",
+            embeds = {embed},
+        })
 
-    for _, desc in ipairs(baseChunks) do
-        sendOnePart(desc, false)
-        task.wait(0.15)
-    end
-
-    for _, desc in ipairs(summaryChunks) do
-        sendOnePart(desc, true)
-        task.wait(0.15)
-    end
-
-    if allOk then
-        if totalParts == 1 then
-            setWebhookStatus("Terkirim ✅")
-        else
-            setWebhookStatus("Terkirim " .. totalParts .. " Part ✅")
-        end
-    else
-        setWebhookStatus("Sebagian error: " .. tostring(firstErr or "unknown"))
+        task.spawn(function()
+            pcall(function()
+                HttpService:PostAsync(WEBHOOK_URL, body, Enum.HttpContentType.ApplicationJson, false)
+            end)
+        end)
     end
 end
 
 --------------------------------------------------
--- BUTTON SEND
+--  INTEGRASI STT: _G.AxaChatRelay_ReceiveSTT
 --------------------------------------------------
-whSendBtn.MouseButton1Click:Connect(function()
-    if whSendBtn.Text == "Sending..." then return end
+_G.AxaChatRelay_STTQueue = _G.AxaChatRelay_STTQueue or {}
+local sttQueue = _G.AxaChatRelay_STTQueue
 
-    whSendBtn.Text = "Sending..."
-    setWebhookStatus("Mengirim ke Discord...")
+local function handleSTT(player, text, channelType)
+    local isSpecial = isSpecialUser(player)
+    local isMythic  = isMythicCatch(text)
 
-    task.spawn(function()
-        local ok, err = pcall(sendWebhookBackview)
-        if not ok then
-            warn("[Axa Backview] Error fatal:", err)
-            setWebhookStatus("Error: " .. tostring(err))
-        end
+    addLogLine({
+        Player        = player,
+        Text          = text,
+        ChannelType   = channelType or "Voice",
+        IsSystem      = false,
+        IsSpecialUser = isSpecial,
+        IsMythic      = isMythic,
+        Source        = "STT",
+    })
+end
 
-        if typeof(refreshBagAll) == "function" then
-            pcall(refreshBagAll)
-        end
-        refreshWebhookList()
+_G.AxaChatRelay_ReceiveSTT = handleSTT
 
-        task.wait(0.4)
-        if whSendBtn then
-            whSendBtn.Text = "Send to Discord"
-        end
+-- Flush queue yang sudah dikumpulkan sebelum TAB ini kebuka
+for _, args in ipairs(sttQueue) do
+    local ok, err = pcall(function()
+        handleSTT(unpack(args))
     end)
-end)
+    if not ok then
+        warn("[Axa ChatPublik] Gagal proses STT queue:", err)
+    end
+end
+
+table.clear(sttQueue)
+
+--------------------------------------------------
+--  HOOK CHAT TEXT BIASA (OPSIONAL, GENERIK)
+--------------------------------------------------
+local function handleTextChat(player, text, channelType, isSystem)
+    local isSpecial = isSpecialUser(player)
+    local isMythic  = isMythicCatch(text)
+
+    addLogLine({
+        Player        = player,
+        Text          = text,
+        ChannelType   = channelType or "Chat",
+        IsSystem      = isSystem or false,
+        IsSpecialUser = isSpecial,
+        IsMythic      = isMythic,
+        Source        = "Text",
+    })
+end
+
+-- Coba pakai TextChatService (chat baru)
+if TextChatService and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    TextChatService.MessageReceived:Connect(function(message)
+        local txt = message.Text
+        local channelName = "Chat"
+        if message.TextChannel then
+            channelName = message.TextChannel.Name
+        end
+
+        local isSystem = (message.Status ~= Enum.TextChatMessageStatus.Success)
+        local p = nil
+
+        if message.TextSource and message.TextSource.UserId then
+            p = Players:GetPlayerByUserId(message.TextSource.UserId)
+        end
+
+        handleTextChat(p, txt, channelName, isSystem)
+    end)
+else
+    -- Fallback: legacy chat (nggak selalu work di game yang pakai TextChatService)
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local defaultChatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    if defaultChatEvents then
+        local onMessageDone = defaultChatEvents:FindFirstChild("OnMessageDoneFiltering")
+        if onMessageDone and onMessageDone:IsA("RemoteEvent") then
+            onMessageDone.OnClientEvent:Connect(function(data)
+                local p
+                if data.FromSpeaker and Players:FindFirstChild(data.FromSpeaker) then
+                    p = Players[data.FromSpeaker]
+                end
+                local txt = data.Message or ""
+                local channelName = data.OriginalChannel or "Chat"
+                handleTextChat(p, txt, channelName, false)
+            end)
+        end
+    end
+end
+
+--------------------------------------------------
+--  EXPOSE DI _G (OPTIONAL)
+--------------------------------------------------
+_G.AxaChatPublik = {
+    FilterState   = FilterState,
+    AddLogLine    = addLogLine,
+    IsSpecialUser = isSpecialUser,
+    IsMythicCatch = isMythicCatch,
+}
