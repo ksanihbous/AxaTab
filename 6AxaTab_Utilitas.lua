@@ -1,6 +1,6 @@
 --==========================================================
 --  AxaTab_Utilitas.lua
---  Fokus: ShiftRun + Infinite Jump + Kompas HUD (Top/Bottom)
+--  Fokus: ShiftRun + Infinite Jump + Kompas HUD + Util (Voice/Screen)
 --  Env dari core:
 --      TAB_FRAME = Frame konten tab Util (sudah dibuat di core AxaHub)
 --==========================================================
@@ -20,6 +20,41 @@ local GuiService           = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera      = workspace.CurrentCamera
+
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local VoiceChatService
+do
+    local ok, svc = pcall(function()
+        return game:GetService("VoiceChatService")
+    end)
+    if ok then
+        VoiceChatService = svc
+    else
+        VoiceChatService = nil
+    end
+end
+
+------------------------------------------------------
+-- HELPER: Horizontal Playgame
+------------------------------------------------------
+local function setHorizontalPlaygame(enabled: boolean)
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return end
+
+    local ok, err = pcall(function()
+        if enabled then
+            pg.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor
+        else
+            -- balik ke mode sensor (default Roblox)
+            pg.ScreenOrientation = Enum.ScreenOrientation.Sensor
+        end
+    end)
+
+    if not ok then
+        warn("[AxaUtil] Gagal set ScreenOrientation:", err)
+    end
+end
 
 ------------------------------------------------------
 -- HELPER UI: Row Toggle (☐ / ☑)
@@ -122,7 +157,7 @@ local function getCharPosition(char: Model?)
 end
 
 ------------------------------------------------------
--- SHIFT RUN (mengikuti mesin referensi kamu)
+-- SHIFT RUN
 ------------------------------------------------------
 local SR_AnimationID = 10862419793
 local SR_RunningSpeed = 40
@@ -259,7 +294,7 @@ if LocalPlayer.Character then SR_attachCharacter(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(SR_attachCharacter)
 
 ------------------------------------------------------
--- INFINITE JUMP (sesuai scriptmu, dibungkus toggle)
+-- INFINITE JUMP
 ------------------------------------------------------
 local IJ_Settings = {
     ExtraJumps          = 5,
@@ -621,7 +656,7 @@ do
 end
 
 ------------------------------------------------------
--- UI TAB: Layout + Toggle Connect
+-- UI TAB: Header + Scroll + Toggle Connect
 ------------------------------------------------------
 do
     local header = Instance.new("TextLabel")
@@ -633,12 +668,12 @@ do
     header.TextSize = 15
     header.TextXAlignment = Enum.TextXAlignment.Left
     header.TextColor3 = Color3.fromRGB(40, 40, 70)
-    header.Text = "⚙️ Utilitas - ShiftRun, Infinite Jump, Kompas"
+    header.Text = "⚙️ Utilitas - Run, Jump, Kompas, Voice"
     header.Parent = TAB_FRAME
 
     local sub = Instance.new("TextLabel")
     sub.Name = "UtilSub"
-    sub.Size = UDim2.new(1, -10, 0, 38)
+    sub.Size = UDim2.new(1, -10, 0, 32)
     sub.Position = UDim2.new(0, 5, 0, 28)
     sub.BackgroundTransparency = 1
     sub.Font = Enum.Font.Gotham
@@ -647,15 +682,27 @@ do
     sub.TextXAlignment = Enum.TextXAlignment.Left
     sub.TextYAlignment = Enum.TextYAlignment.Top
     sub.TextColor3 = Color3.fromRGB(90, 90, 120)
-    sub.Text = "ShiftRun: tahan LeftShift (WalkSpeed 40 + anim + FOV 80).  Infinite Jump: +5 lompatan udara.\nKompas: pita derajat U/T/S/B (ID) dengan posisi Atas/Bawah."
+    sub.Text = "ShiftRun, Infinite Jump, Kompas HUD, kunci layar horizontal, dan Rejoin Voice."
     sub.Parent = TAB_FRAME
+
+    -- ScrollingFrame di bawah header + desc
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "UtilScroll"
+    scroll.Position = UDim2.new(0, 0, 0, 64)   -- di bawah header+desc
+    scroll.Size = UDim2.new(1, 0, 1, -64)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 4
+    scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.Parent = TAB_FRAME
 
     local listHolder = Instance.new("Frame")
     listHolder.Name = "ToggleList"
-    listHolder.Size = UDim2.new(1, -10, 1, -110)
-    listHolder.Position = UDim2.new(0, 5, 0, 70)
+    listHolder.Size = UDim2.new(1, -10, 0, 0)
+    listHolder.Position = UDim2.new(0, 5, 0, 0)
     listHolder.BackgroundTransparency = 1
-    listHolder.Parent = TAB_FRAME
+    listHolder.Parent = scroll
 
     local layout = Instance.new("UIListLayout")
     layout.FillDirection = Enum.FillDirection.Vertical
@@ -663,7 +710,40 @@ do
     layout.Padding = UDim.new(0, 6)
     layout.Parent = listHolder
 
+    local function updateCanvas()
+        local size = layout.AbsoluteContentSize
+        listHolder.Size = UDim2.new(1, -10, 0, size.Y)
+        scroll.CanvasSize = UDim2.new(0, 0, 0, size.Y + 10)
+    end
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+    task.defer(updateCanvas)
+
+    --------------------------------------------------
+    -- Toggle: Horizontal Playgame (default: true)
+    --------------------------------------------------
+    local rowHorizontal = createToggleRow(
+        listHolder,
+        "0_HorizontalPlay",
+        "Horizontal Playgame (kunci layar ke landscape)",
+        true
+    )
+    rowHorizontal.OnChanged(function(state)
+        setHorizontalPlaygame(state)
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Horizontal Playgame",
+                Text  = state and "Orientasi dikunci ke landscape." or "Orientasi kembali auto.",
+                Duration = 3
+            })
+        end)
+    end)
+    -- Apply default value sekali di awal
+    setHorizontalPlaygame(rowHorizontal.Get())
+
+    --------------------------------------------------
     -- Toggle: ShiftRun
+    --------------------------------------------------
     local rowShift = createToggleRow(
         listHolder,
         "1_ShiftRun",
@@ -682,7 +762,9 @@ do
         end)
     end)
 
+    --------------------------------------------------
     -- Toggle: Infinite Jump
+    --------------------------------------------------
     local rowInfJump = createToggleRow(
         listHolder,
         "2_InfiniteJump",
@@ -701,7 +783,9 @@ do
         end)
     end)
 
+    --------------------------------------------------
     -- Toggle: Kompas HUD
+    --------------------------------------------------
     local rowCompass = createToggleRow(
         listHolder,
         "3_CompassHUD",
@@ -720,7 +804,9 @@ do
     end)
     Compass.SetVisible(rowCompass.Get())
 
+    --------------------------------------------------
     -- Posisi Kompas: Atas / Bawah
+    --------------------------------------------------
     local posRow = Instance.new("Frame")
     posRow.Name = "3b_CompassPos"
     posRow.Size = UDim2.new(1, 0, 0, 30)
@@ -789,6 +875,56 @@ do
             })
         end)
     end)
+
+    --------------------------------------------------
+    -- Toggle: Rejoin Voice (default: false)
+    --------------------------------------------------
+    local rowRejoinVoice = createToggleRow(
+        listHolder,
+        "4_RejoinVoice",
+        "Rejoin Voice Chat (coba sambung ulang)",
+        false
+    )
+
+    rowRejoinVoice.OnChanged(function(state)
+        if not state then return end
+
+        if not VoiceChatService then
+            pcall(function()
+                StarterGui:SetCore("SendNotification", {
+                    Title = "Rejoin Voice",
+                    Text  = "VoiceChatService tidak tersedia di game ini.",
+                    Duration = 4
+                })
+            end)
+            return
+        end
+
+        task.spawn(function()
+            local ok, err = pcall(function()
+                VoiceChatService:JoinVoice()
+            end)
+
+            if ok then
+                pcall(function()
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "Rejoin Voice",
+                        Text  = "Percobaan join voice dikirim.",
+                        Duration = 3
+                    })
+                end)
+            else
+                warn("[AxaUtil] JoinVoice gagal:", err)
+                pcall(function()
+                    StarterGui:SetCore("SendNotification", {
+                        Title = "Rejoin Voice",
+                        Text  = "Gagal join voice: " .. tostring(err),
+                        Duration = 4
+                    })
+                end)
+            end
+        end)
+    end)
 end
 
--- Tab util selesai: ShiftRun + Infinite Jump + Kompas (default di atas, bisa pindah ke bawah lewat UI).
+-- Tab util: ShiftRun + Infinite Jump + Kompas (top/bottom) + Horizontal Playgame + Rejoin Voice.
