@@ -791,4 +791,33 @@ do
     end)
 end
 
+--==========================================================
+--  REGISTER CLEANUP UNTUK TAB "Jump & Run"
+--  (dipanggil CORE saat panel di-close)
+--==========================================================
+_G.AxaHub = _G.AxaHub or {}
+_G.AxaHub.TabCleanup = _G.AxaHub.TabCleanup or {}
+
+_G.AxaHub.TabCleanup[TAB_ID or "jumprun"] = function()
+    -- Matikan ShiftRun
+    pcall(function()
+        SR_setSprintEnabled(false)
+    end)
+
+    -- Matikan Infinite Jump
+    IJ_Enabled   = false
+    IJ_JumpsDone = 0
+
+    -- Hancurkan Kompas HUD
+    pcall(function()
+        Compass.SetVisible(false)
+        Compass.Destroy()
+    end)
+
+    -- Unbind action ShiftRun
+    pcall(function()
+        ContextActionService:UnbindAction(SR_ACTION_NAME)
+    end)
+end
+
 -- Tab util selesai: ShiftRun + Infinite Jump + Kompas (default di atas, bisa pindah ke bawah lewat UI).
