@@ -141,7 +141,7 @@ local espAllCorner = Instance.new("UICorner")
 espAllCorner.CornerRadius = UDim.new(0, 8)
 espAllCorner.Parent = espAllBtn
 
--- Tombol Spectate Prev / Next (bentuk < dan >)
+-- Tombol Spectate Prev / Next (pakai Spectate Free)
 local scrollLeftBtn = Instance.new("TextButton")
 scrollLeftBtn.Name = "SpectPrevBtn"
 scrollLeftBtn.Size = UDim2.new(0, 24, 0, 24)
@@ -182,7 +182,7 @@ local STUDS_TO_METERS       = 1
 
 -- mode:
 -- "none"    : tidak spect
--- "custom"  : camera scriptable di belakang target (mode lama)
+-- "custom"  : kamera scriptable di belakang target
 -- "free"    : CameraSubject = Humanoid (bebas putar kamera)
 local spectateMode          = "none"
 local respawnConn           = nil
@@ -198,7 +198,7 @@ local function disconnectRespawn()
     end
 end
 
--- helper: reset kamera ke LocalPlayer (mirror hardResetCameraToLocal di CORE)
+-- helper: reset kamera ke LocalPlayer
 local function hardResetCameraToLocal()
     local cam = workspace.CurrentCamera
     if not cam then return end
@@ -215,7 +215,7 @@ local function hardResetCameraToLocal()
     cam.AudioListener = Enum.CameraAudioListener.Camera
 end
 
--- STOP SPECTATE:
+-- STOP SPECTATE
 local function stopSpectate()
     disconnectRespawn()
     currentSpectateTarget = nil
@@ -242,7 +242,7 @@ _G.Axa_StopSpectate    = stopSpectate
 -- SPECTATE MODE HELPERS
 ------------------------------------------------
 
--- Mode lama: kamera scriptable di belakang target (chase cam)
+-- Mode lama: kamera scriptable di belakang target (dipakai tombol "Spectate" di row)
 local function startCustomSpectate(plr)
     disconnectRespawn()
     currentSpectateTarget = plr
@@ -255,7 +255,7 @@ local function startCustomSpectate(plr)
     end
 end
 
--- Mode baru: SPECT FREE (pakai CameraSubject, bebas putar kamera)
+-- Mode baru: SPECT FREE (CameraSubject = Humanoid)
 local function startFreeSpectate(plr)
     disconnectRespawn()
     currentSpectateTarget = plr
@@ -271,7 +271,6 @@ local function startFreeSpectate(plr)
         end
     end
 
-    -- follow karakter baru saat respawn, tetap SPECT FREE
     respawnConn = plr and plr.CharacterAdded:Connect(function(char)
         local hum2 = char:WaitForChild("Humanoid")
         local cam2 = workspace.CurrentCamera
@@ -417,7 +416,7 @@ local function buildRow(plr)
         rs.Color             = Color3.fromRGB(120, 160, 235)
     end
 
-    -- SCROLLING HORIZONTAL DI DALAM ROW (manual untuk tombol panjang)
+    -- SCROLLING HORIZONTAL DI DALAM ROW
     local hScroll = Instance.new("ScrollingFrame")
     hScroll.Name = "RowScroll"
     hScroll.Position = UDim2.new(0, 4, 0, 4)
@@ -471,13 +470,13 @@ local function buildRow(plr)
 
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
-    spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 18)
+    spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 24)
     spectateBtn.Position = UDim2.new(0, baseX + btnW + spacing, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
     spectateBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
-    spectateBtn.Text = "SPECT POV"
+    spectateBtn.Text = "Spectate"
     spectateBtn.Parent = content
 
     local sc = Instance.new("UICorner")
@@ -556,7 +555,7 @@ local function rebuildList()
 end
 
 ------------------------------------------------
--- SPECTATE SEQUENCE: < & > BERDASARKAN URUTAN LIST
+-- SPECTATE SEQUENCE: < & > (SPECT FREE)
 ------------------------------------------------
 local function getSpectateList()
     local arr = {}
@@ -570,7 +569,6 @@ local function getSpectateList()
         end
     end
 
-    -- urutan sama seperti Name (UIListLayout.SortOrder = Name)
     table.sort(arr, function(a, b)
         return string.lower(a.Name) < string.lower(b.Name)
     end)
@@ -598,10 +596,8 @@ local function spectateStep(dir) -- dir: 1 = next, -1 = prev
     end
 
     if not idx then
-        -- belum spect siapa2: kalau next → mulai dari pertama, prev → dari terakhir
         idx = (dir >= 0) and 1 or n
     else
-        -- geser index circular
         local newIdx = idx + dir
         if newIdx < 1 then
             newIdx = n
@@ -613,7 +609,8 @@ local function spectateStep(dir) -- dir: 1 = next, -1 = prev
 
     local target = listPlrs[idx]
     if target then
-        startCustomSpectate(target)
+        -- 🔥 Tombol < & > pakai SPECT FREE mode
+        startFreeSpectate(target)
     else
         stopSpectate()
     end
@@ -666,7 +663,7 @@ espAllBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- < & > jadi Spectate Previous / Next sesuai urutan list (skip diri sendiri)
+-- < & > = Spectate Free previous / next
 scrollLeftBtn.MouseButton1Click:Connect(function()
     spectatePrev()
 end)
@@ -679,7 +676,6 @@ end)
 -- KAMERA + JARAK
 ------------------------------------------------
 runService.RenderStepped:Connect(function()
-    -- SAFETY: Kalau nggak lagi spect apa-apa, pastikan status balik Idle
     if not currentSpectateTarget or spectateMode == "none" then
         if statusLabel.Text ~= "Status: Idle" then
             setSpectateStatus("Idle")
@@ -695,13 +691,11 @@ runService.RenderStepped:Connect(function()
 
             if hrp then
                 if spectateMode == "custom" then
-                    -- mode lama: kamera scriptable di belakang target
                     cam.CameraType = Enum.CameraType.Scriptable
                     local offset   = hrp.CFrame.LookVector * -8 + Vector3.new(0, 4, 0)
                     cam.CFrame     = CFrame.new(hrp.Position + offset, hrp.Position)
                     cam.AudioListener = Enum.CameraAudioListener.Camera
                 elseif spectateMode == "free" then
-                    -- mode baru: biarin CameraSubject handle, cukup pastikan type-nya Custom
                     local hum = char:FindFirstChildOfClass("Humanoid")
                     if hum then
                         cam.CameraType    = Enum.CameraType.Custom
