@@ -4,10 +4,12 @@
 --
 --  UI:
 --    - Kiri: Filter Chat (ScrollingFrame + checkbox)
---    - Kanan: Log + Subtitle + tombol "Chat Filter: ON/OFF"
---    - Subtitle: 3 baris terakhir (di panel kanan bawah)
+--    - Kanan: Log + Subtitle (tulisan), + tombol "Chat Filter: ON/OFF"
+--  Subtitle 3 baris:
+--    - TIDAK di dalam tab, tapi ScreenGui global "AxaSubtitleUI"
+--      di bawah tengah layar (seperti contoh script panjangmu).
 --
---  Fungsi internal:
+--  Fitur:
 --    - Master toggle CHAT_FILTER_ENABLED (ON/OFF)
 --    - Filter:
 --        1. All Chat
@@ -18,7 +20,7 @@
 --        6. Subtitle hanya player terdekat (~17 studs)
 --    - Relay ke Discord (multi webhook) + embed YAML
 --    - History file "historychat.txt" via multipart
---    - Subtitle 3 baris (logika mirip script panjangmu)
+--    - Subtitle 3 baris (global, di bawah layar)
 --    - STT RemoteEvent + BindableEvent + _G.AxaChatRelay_ReceiveSTT
 --==========================================================
 
@@ -69,7 +71,6 @@ ROOT_FRAME.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
 --  CONFIG DISCORD
 ------------------------------------------------
 local WEBHOOK_URLS = {
-    -- boleh tambah lagi kalau mau
     "https://discord.com/api/webhooks/1440379761389080597/yRL_Ek5RSttD-cMVPE6f0VtfpuRdMcVOjq4IkqtFOycPKjwFCiojViQGwXd_7AqXRM2P",
 }
 
@@ -222,7 +223,7 @@ local function getWITATimestampText()
 end
 
 ------------------------------------------------
---  STRING / HTTP / SERVER INFO / HISTORY
+--  STRING / HTTP / SERVER INFO
 ------------------------------------------------
 local function stripFontTags(str)
     if not str or str == "" then return str end
@@ -285,7 +286,9 @@ end
 local PLACE_SLUG = slugifyPlaceName(PLACE_NAME)
 local PLACE_URL  = string.format("https://www.roblox.com/id/games/%d/%s", PLACE_ID, PLACE_SLUG)
 
--- History buffer
+------------------------------------------------
+--  HISTORY BUFFER
+------------------------------------------------
 local historyLines   = {}
 local historyCount   = 0
 local historyCharLen = 0
@@ -315,7 +318,6 @@ local function addHistoryLine(line)
     if not HISTORY_SEND_ON_EACH then
         if historyCount >= HISTORY_MAX_LINES or historyCharLen >= HISTORY_MAX_CHARS then
             task.spawn(function()
-                -- kita kirim batch (sendHistoryFile didefinisikan setelah)
                 if _G.__AxaChat_SendHistoryFile then
                     _G.__AxaChat_SendHistoryFile()
                 end
@@ -333,7 +335,7 @@ local function addHistoryLine(line)
 end
 
 ------------------------------------------------
---  UI: HEADER + KIRI (FILTER) + KANAN (LOG+SUBTITLE)
+--  UI: HEADER TAB
 ------------------------------------------------
 local header = Instance.new("TextLabel")
 header.Name = "Header"
@@ -358,10 +360,12 @@ desc.TextColor3 = Color3.fromRGB(90, 90, 120)
 desc.TextXAlignment = Enum.TextXAlignment.Left
 desc.TextYAlignment = Enum.TextYAlignment.Top
 desc.TextWrapped = true
-desc.Text = "Filter chat publik + system info + Special UserID, relay ke Discord + history, dan subtitle 3 baris di panel kanan."
+desc.Text = "Filter chat publik + system info + Special UserID, relay ke Discord + history, dan subtitle 3 baris di bawah layar."
 desc.Parent = ROOT_FRAME
 
--- PANEL KIRI: Filter Chat (ScrollingFrame)
+------------------------------------------------
+--  PANEL KIRI: Filter Chat (ScrollingFrame)
+------------------------------------------------
 local leftPanel = Instance.new("Frame")
 leftPanel.Name = "LeftPanel"
 leftPanel.BackgroundTransparency = 1
@@ -542,7 +546,7 @@ end
 updateFilterCanvas()
 
 ------------------------------------------------
---  PANEL KANAN: LOG + SUBTITLE + CHAT FILTER TOGGLE
+--  PANEL KANAN: Log + Chat Filter Toggle (tanpa frame subtitle di dalam tab)
 ------------------------------------------------
 local rightPanel = Instance.new("Frame")
 rightPanel.Name = "RightPanel"
@@ -563,7 +567,7 @@ rightTitle.TextXAlignment = Enum.TextXAlignment.Left
 rightTitle.Text = "Log + Subtitle"
 rightTitle.Parent = rightPanel
 
--- Chat Filter: ON/OFF
+-- baris tombol Chat Filter: ON/OFF
 local chatFilterRow = Instance.new("Frame")
 chatFilterRow.Name = "ChatFilterRow"
 chatFilterRow.Size = UDim2.new(1, 0, 0, 24)
@@ -598,38 +602,11 @@ cfToggle.AutoButtonColor = true
 cfToggle.Parent = chatFilterRow
 Instance.new("UICorner", cfToggle).CornerRadius = UDim.new(1, 0)
 
-local function refreshChatFilterToggle()
-    if CHAT_FILTER_ENABLED then
-        cfToggle.Text = "ON"
-        cfToggle.BackgroundColor3 = Color3.fromRGB(90, 160, 250)
-        cfToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        cfLabel.TextColor3 = Color3.fromRGB(80, 80, 110)
-    else
-        cfToggle.Text = "OFF"
-        cfToggle.BackgroundColor3 = Color3.fromRGB(150, 70, 70)
-        cfToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        cfLabel.TextColor3 = Color3.fromRGB(140, 80, 80)
-    end
-end
-
-cfToggle.MouseButton1Click:Connect(function()
-    CHAT_FILTER_ENABLED = not CHAT_FILTER_ENABLED
-    refreshChatFilterToggle()
-
-    -- matikan subtitle & log kalau OFF
-    if not CHAT_FILTER_ENABLED then
-        -- clear subtitle panel
-        -- (fungsi updateSubtitleUI akan handle visible = false)
-    end
-end)
-
-refreshChatFilterToggle()
-
 -- LOG FRAME
 local logFrame = Instance.new("Frame")
 logFrame.Name = "LogFrame"
-logFrame.Position = UDim2.new(0, 0, 0, 48) -- bawah Judul + ChatFilter
-logFrame.Size = UDim2.new(1, 0, 1, -96)   -- sisakan ruang untuk subtitle (± 54 + margin)
+logFrame.Position = UDim2.new(0, 0, 0, 48) -- bawah judul + ChatFilter
+logFrame.Size = UDim2.new(1, 0, 1, -56)   -- sisakan sedikit ruang bawah
 logFrame.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
 logFrame.BorderSizePixel = 0
 logFrame.Parent = rightPanel
@@ -671,40 +648,84 @@ local function updateLogCanvas()
 end
 logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateLogCanvas)
 
--- SUBTITLE PANEL (3 baris) di kanan bawah
-local subtitleFrame = Instance.new("Frame")
-subtitleFrame.Name = "SubtitleFrame"
-subtitleFrame.Size = UDim2.new(1, 0, 0, 54)
-subtitleFrame.Position = UDim2.new(0, 0, 1, -54)
-subtitleFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-subtitleFrame.BorderSizePixel = 0
-subtitleFrame.Parent = rightPanel
-
-local subCorner = Instance.new("UICorner")
-subCorner.CornerRadius = UDim.new(0, 8)
-subCorner.Parent = subtitleFrame
-
-local subPadding = Instance.new("UIPadding")
-subPadding.PaddingTop    = UDim.new(0, 4)
-subPadding.PaddingBottom = UDim.new(0, 4)
-subPadding.PaddingLeft   = UDim.new(0, 6)
-subPadding.PaddingRight  = UDim.new(0, 6)
-subPadding.Parent = subtitleFrame
-
-local subLayout = Instance.new("UIListLayout")
-subLayout.FillDirection = Enum.FillDirection.Vertical
-subLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-subLayout.SortOrder = Enum.SortOrder.LayoutOrder
-subLayout.Padding = UDim.new(0, 2)
-subLayout.Parent = subtitleFrame
-
+------------------------------------------------
+--  SUBTITLE GLOBAL (ScreenGui terpisah, bawah layar)
+------------------------------------------------
+local subtitleGui
+local subtitleFrame
 local subtitleLines = {}
 
-------------------------------------------------
---  SUBTITLE HANDLER (3 baris, pakai NEARBY_CAPTION_ONLY)
-------------------------------------------------
+local function createSubtitleUI()
+    if subtitleFrame and subtitleFrame.Parent then
+        return
+    end
+
+    local pg = playerGui
+    if not pg then
+        local ok, res = pcall(function()
+            return LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+        end)
+        if ok then
+            pg = res
+            playerGui = res
+        else
+            return
+        end
+    end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AxaSubtitleUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = pg
+
+    subtitleGui = screenGui
+
+    local frame = Instance.new("Frame")
+    frame.Name = "SubtitleFrame"
+    frame.Parent = screenGui
+    frame.AnchorPoint = Vector2.new(0.5, 1)
+    frame.Position = UDim2.new(0.5, 0, 1, -60)
+    frame.Size = UDim2.new(0.8, 0, 0, 90)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 0.35
+    frame.BorderSizePixel = 0
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop    = UDim.new(0, 6)
+    padding.PaddingBottom = UDim.new(0, 6)
+    padding.PaddingLeft   = UDim.new(0, 8)
+    padding.PaddingRight  = UDim.new(0, 8)
+    padding.Parent = frame
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 4)
+    layout.Parent = frame
+
+    subtitleFrame = frame
+end
+
+local function getSubtitleFrame()
+    if subtitleFrame and subtitleFrame.Parent then
+        return subtitleFrame
+    end
+    createSubtitleUI()
+    return subtitleFrame
+end
+
 local function updateSubtitleUI()
-    for _, child in ipairs(subtitleFrame:GetChildren()) do
+    local frame = getSubtitleFrame()
+    if not frame then return end
+
+    for _, child in ipairs(frame:GetChildren()) do
         if child:IsA("TextLabel") then
             child:Destroy()
         end
@@ -713,12 +734,12 @@ local function updateSubtitleUI()
     for index, text in ipairs(subtitleLines) do
         local label = Instance.new("TextLabel")
         label.Name = "SubtitleLine" .. index
-        label.Parent = subtitleFrame
-        label.Size = UDim2.new(1, 0, 0, 16)
+        label.Parent = frame
+        label.Size = UDim2.new(1, 0, 0, 26)
         label.BackgroundTransparency = 1
         label.Font = Enum.Font.GothamBold
-        label.TextSize = 13
-        label.TextColor3 = Color3.fromRGB(235, 235, 255)
+        label.TextSize = 18
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
         label.TextStrokeTransparency = 0.2
         label.TextWrapped = true
         label.TextXAlignment = Enum.TextXAlignment.Left
@@ -726,7 +747,7 @@ local function updateSubtitleUI()
         label.Text = text
     end
 
-    subtitleFrame.Visible = CHAT_FILTER_ENABLED and (#subtitleLines > 0)
+    frame.Visible = CHAT_FILTER_ENABLED and (#subtitleLines > 0)
 end
 
 local function pushSubtitleLine(text)
@@ -780,6 +801,36 @@ local function pushSubtitleMessage(channelName, displayName, authorName, message
 
     pushSubtitleLine(fullText)
 end
+
+------------------------------------------------
+--  CHAT FILTER TOGGLE -> juga bersihkan subtitle saat OFF
+------------------------------------------------
+local function refreshChatFilterToggle()
+    if CHAT_FILTER_ENABLED then
+        cfToggle.Text = "ON"
+        cfToggle.BackgroundColor3 = Color3.fromRGB(90, 160, 250)
+        cfToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        cfLabel.TextColor3 = Color3.fromRGB(80, 80, 110)
+    else
+        cfToggle.Text = "OFF"
+        cfToggle.BackgroundColor3 = Color3.fromRGB(150, 70, 70)
+        cfToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        cfLabel.TextColor3 = Color3.fromRGB(140, 80, 80)
+    end
+end
+
+cfToggle.MouseButton1Click:Connect(function()
+    CHAT_FILTER_ENABLED = not CHAT_FILTER_ENABLED
+    refreshChatFilterToggle()
+
+    if not CHAT_FILTER_ENABLED then
+        -- bersihkan subtitle global saat dimatikan
+        subtitleLines = {}
+        updateSubtitleUI()
+    end
+end)
+
+refreshChatFilterToggle()
 
 ------------------------------------------------
 --  DETEKSI SYSTEM SPECIAL & KHUSUS (Mirethos / Kaelvorn)
@@ -869,7 +920,7 @@ local function shouldRelayChat(isSystem, player, isSpecial, isKhusus)
 end
 
 ------------------------------------------------
---  DISCORD WEBHOOK (embed YAML) + HISTORY SEND
+--  DISCORD WEBHOOK (embed YAML)
 ------------------------------------------------
 local function sendDiscordChat(authorName, displayName, userId, messageText, channelName, isSystem, isSpecialOverride, isKhususOverride)
     if not CHAT_FILTER_ENABLED then
@@ -967,7 +1018,6 @@ local function sendDiscordChat(authorName, displayName, userId, messageText, cha
     end
 
     local fields = {}
-
     table.insert(fields, { name = "Pengirim",  value = pengirimFieldValue,  inline = false })
     table.insert(fields, { name = "Channel",   value = channelFieldValue,   inline = false })
     table.insert(fields, { name = "Server",    value = serverFieldValue,    inline = false })
@@ -1017,7 +1067,9 @@ local function sendDiscordChat(authorName, displayName, userId, messageText, cha
     end
 end
 
--- Kirim file historychat.txt (dipanggil via _G.__AxaChat_SendHistoryFile)
+------------------------------------------------
+--  KIRIM FILE HISTORY (dipanggil via _G.__AxaChat_SendHistoryFile)
+------------------------------------------------
 _G.__AxaChat_SendHistoryFile = function()
     if not HISTORY_ENABLED then return end
     if not CHAT_FILTER_ENABLED then return end
@@ -1313,7 +1365,7 @@ end
 -- Ekspos global (queue-safe)
 _G.AxaChatRelay_ReceiveSTT = relaySTTMessage
 
--- Replay queue STT kalau ada sebelum TAB ini kebuka
+-- Replay queue STT kalau ada sebelum TAB ini siap
 if STT_QUEUE and #STT_QUEUE > 0 then
     for _, args in ipairs(STT_QUEUE) do
         local ok, err = pcall(function()
@@ -1352,9 +1404,9 @@ local function handleOneChat(player, rawText, channelName, isSystem)
         local specialDetected, newAuthor, newDisplay, detectedUserId = detectSystemSpecialFromText(text)
         if specialDetected then
             isSpecialFlag = true
-            if newAuthor then   authorName   = newAuthor   end
-            if newDisplay then  displayName  = newDisplay  end
-            if detectedUserId then userId    = detectedUserId end
+            if newAuthor      then authorName   = newAuthor   end
+            if newDisplay     then displayName  = newDisplay  end
+            if detectedUserId then userId       = detectedUserId end
         end
         isKhusus = isKhususCatch(userId, text)
     else
@@ -1362,7 +1414,7 @@ local function handleOneChat(player, rawText, channelName, isSystem)
         isKhusus = isKhususCatch(userId, text)
     end
 
-    -- Subtitle: selalu dicoba dulu (ikut master + nearby check di pushSubtitleMessage)
+    -- Subtitle global
     pushSubtitleMessage(
         channelName,
         displayName,
@@ -1463,6 +1515,7 @@ end
 --  START
 ------------------------------------------------
 local function startChatRelay()
+    createSubtitleUI()
     setupSTTRemotes()
 
     local ok, version = pcall(function()
@@ -1475,12 +1528,18 @@ local function startChatRelay()
         hookLegacyChat()
     end
 
-    print("[Axa Chat Relay] Aktif di TAB CHAT PUBLIK: relay chat -> Discord + history file, SPECIAL shiny ✨, Mirethos/Kaelvorn pink, filter + master toggle, subtitle 3 baris + STT RemoteEvent/Bindable.")
+    print("[Axa Chat Relay] Aktif di TAB CHAT PUBLIK:"
+        .. " relay chat -> Discord + history file,"
+        .. " SPECIAL shiny ✨, avatar 420x420,"
+        .. " per-user Special Mention (+ fallback Axa),"
+        .. " chat khusus Mirethos/Kaelvorn (pink),"
+        .. " UI filter + master toggle Chat Filter: ON/OFF,"
+        .. " subtitle global 1–3 baris + STT RemoteEvent/Bindable.")
 end
 
 startChatRelay()
 
--- best effort kirim history saat game close
+-- best-effort kirim history saat game close
 pcall(function()
     game:BindToClose(function()
         local ok, err = pcall(function()
