@@ -18,7 +18,9 @@ local starterGui   = StarterGui
 local TeleportService = game:GetService("TeleportService")
 local Stats           = game:GetService("Stats")
 
--- fallback tween kalau AXA_TWEEN nggak ada
+--==========================================================
+-- HELPER
+--==========================================================
 local function axaTween(obj, t, props)
     if _G.AxaHub_Tween then
         return _G.AxaHub_Tween(obj, t, props)
@@ -32,15 +34,15 @@ end
 local function notify(title, text, dur)
     pcall(function()
         starterGui:SetCore("SendNotification", {
-            Title   = title or "Info",
-            Text    = text or "",
+            Title    = title or "Info",
+            Text     = text or "",
             Duration = dur or 2
         })
     end)
 end
 
 --==========================================================
--- HEADER
+-- HEADER (TIDAK DI-SCROLL)
 --==========================================================
 local header = Instance.new("TextLabel")
 header.Name = "Header"
@@ -65,22 +67,25 @@ sub.TextColor3 = Color3.fromRGB(90, 90, 120)
 sub.TextXAlignment = Enum.TextXAlignment.Left
 sub.TextYAlignment = Enum.TextYAlignment.Top
 sub.TextWrapped = true
-sub.Text = "Monitor info server, performa client, pemain online, dan tombol utilitas (rejoin, copy ID, dan lain-lain) dalam satu panel."
+sub.Text = "Monitor info server, performa client, pemain online, dan utilitas (rejoin, server hop, copy ID) dalam satu panel."
 sub.Parent = frame
 
 --==========================================================
--- SCROLLINGFRAME UTAMA (BODY) DI BAWAH HEADER
+-- BODY SCROLL (SEGALA KONTEN DI SINI, BISA SCROLL KE BAWAH)
 --==========================================================
-local bodyScroll = Instance.new("ScrollingFrame")
-bodyScroll.Name = "BodyScroll"
-bodyScroll.Position = UDim2.new(0, 0, 0, 64)      -- persis gaya CORE: di bawah header+sub
-bodyScroll.Size = UDim2.new(1, 0, 1, -64)
-bodyScroll.BackgroundTransparency = 1
-bodyScroll.BorderSizePixel = 0
-bodyScroll.ScrollBarThickness = 4
-bodyScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-bodyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-bodyScroll.Parent = frame
+local bodyScroll = frame:FindFirstChild("BodyScroll")
+if not bodyScroll or not bodyScroll:IsA("ScrollingFrame") then
+    bodyScroll = Instance.new("ScrollingFrame")
+    bodyScroll.Name = "BodyScroll"
+    bodyScroll.Position = UDim2.new(0, 0, 0, 64)          -- di bawah header+sub
+    bodyScroll.Size = UDim2.new(1, 0, 1, -64)
+    bodyScroll.BackgroundTransparency = 1
+    bodyScroll.BorderSizePixel = 0
+    bodyScroll.ScrollBarThickness = 6                      -- lebih jelas
+    bodyScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+    bodyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    bodyScroll.Parent = frame
+end
 
 local bodyLayout = Instance.new("UIListLayout")
 bodyLayout.FillDirection = Enum.FillDirection.Vertical
@@ -92,9 +97,6 @@ bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     bodyScroll.CanvasSize = UDim2.new(0, 0, 0, bodyLayout.AbsoluteContentSize.Y + 10)
 end)
 
-------------------------------------------------------------
--- Helper bikin "card" section di dalam bodyScroll
-------------------------------------------------------------
 local function makeCard(height)
     local card = Instance.new("Frame")
     card.Name = "Card"
@@ -153,7 +155,6 @@ end
 -- CARD 1: RINGKASAN SERVER + PERFORMA
 --==========================================================
 local summaryCard = makeCard(110)
-
 makeSectionTitle(summaryCard, "Ringkasan Server (Live)")
 
 local summaryLabel = Instance.new("TextLabel")
@@ -172,8 +173,8 @@ summaryLabel.Parent = summaryCard
 
 local startTime = tick()
 local smoothFPS = 60
+
 runService.RenderStepped:Connect(function(dt)
-    -- smoothing FPS biar nggak terlalu “spike”
     local current = 1 / math.max(dt, 0.0001)
     smoothFPS = smoothFPS + (current - smoothFPS) * 0.1
 end)
@@ -262,7 +263,7 @@ end)
 --==========================================================
 -- CARD 2: TOMBOL UTILITAS SERVER (REJOIN, HOP, COPY ID)
 --==========================================================
-local actionCard = makeCard(86)
+local actionCard = makeCard(90)
 makeSectionTitle(actionCard, "Utilitas Server")
 
 local btnHolder = Instance.new("Frame")
@@ -362,18 +363,18 @@ end)
 --==========================================================
 -- CARD 3: DAFTAR PLAYER ONLINE
 --==========================================================
-local playersCard = makeCard(200)
+local playersCard = makeCard(210)
 makeSectionTitle(playersCard, "Daftar Player Online")
 
-local subPlayers = makeSectionSub(
+makeSectionSub(
     playersCard,
-    "Klik nama untuk highlight baris. LocalPlayer ditandai warna biru muda.",
+    "Klik baris untuk highlight. LocalPlayer ditandai warna biru muda.",
     28
 )
 
 local listHolder = Instance.new("Frame")
 listHolder.Name = "ListHolder"
-listHolder.Size = UDim2.new(1, -16, 0, 140)
+listHolder.Size = UDim2.new(1, -16, 0, 150)
 listHolder.Position = UDim2.new(0, 8, 0, 60)
 listHolder.BackgroundColor3 = Color3.fromRGB(232, 235, 246)
 listHolder.BorderSizePixel = 0
@@ -511,7 +512,6 @@ local function rebuildPlayerList()
 
     local list = players:GetPlayers()
     table.sort(list, function(a, b)
-        -- LocalPlayer di atas, sisanya sort by Name
         if a == player then
             return true
         elseif b == player then
