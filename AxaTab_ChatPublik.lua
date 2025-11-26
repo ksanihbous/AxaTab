@@ -5,6 +5,7 @@
 --    - UI Filter Chat (All / System / Special / Caught Mirethos/Kaelvorn)
 --    - ScrollingFrame untuk checkbox checklist (biar nggak keluar header)
 --    - Log Chat + Subtitle besar bawah
+--    - Tombol "Chat Filter: ON/OFF" (master switch filter)
 --    - Integrasi STT: _G.AxaChatRelay_ReceiveSTT(player, text, channelType)
 --    - Webhook (kalau WEBHOOK_URL diisi)
 --==========================================================
@@ -84,6 +85,9 @@ end
 -- Isi webhook kamu di sini kalau mau kirim ke Discord
 local WEBHOOK_URL = "" -- contoh: "https://discord.com/api/webhooks/xxxxx/yyyy"
 
+-- Master switch semua filter
+local ChatFilterEnabled = true
+
 -- Filter state default
 local FilterState = {
     AllChat          = true,  -- 1. All Chat
@@ -93,7 +97,7 @@ local FilterState = {
     MythicCatch      = true,  -- 5. caught Mirethos / Kaelvorn
 }
 
--- Daftar Special UserID / koneksi (contoh, isi sesuai punyamu)
+-- Daftar Special UserID / koneksi (isi sesuai punyamu)
 local SPECIAL_USER_IDS = {
     [8957393843] = "AxaXyz999xBBHY",
     -- [UserId] = "Nama / Keterangan",
@@ -168,7 +172,7 @@ foStroke.Color = Color3.fromRGB(200, 200, 215)
 foStroke.Transparency = 0.4
 foStroke.Parent = filterOutline
 
--- ScrollingFrame tempat semua checkbox checklist (supaya tidak keluar dari header / panel)
+-- ScrollingFrame untuk semua checkbox checklist
 local filterScroll = Instance.new("ScrollingFrame")
 filterScroll.Name = "FilterScroll"
 filterScroll.Position = UDim2.new(0, 4, 0, 4)
@@ -193,7 +197,7 @@ end
 
 filterLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateFilterCanvas)
 
--- Definisi filter (urutan dan teks, supaya gampang diubah)
+-- Definisi filter
 local FILTER_DEFS = {
     {
         id    = "AllChat",
@@ -265,25 +269,22 @@ local function makeFilterRow(def)
     label.AutoButtonColor = false
     label.Parent = row
 
-    local function toggle()
-        FilterState[def.id] = not not (not FilterState[def.id] and true or false) -- force boolean
-        FilterState[def.id] = not FilterState[def.id] == false and true or FilterState[def.id]
-    end
-
-    -- Biar nggak ribet: simple toggle
     local function setFromState()
-        local on = FilterState[def.id] ~= false -- default true kalau nil
+        local on = FilterState[def.id]
+        if on == nil then
+            on = true
+        end
         FilterState[def.id] = on
         setCheckboxVisual(check, on)
     end
 
     check.MouseButton1Click:Connect(function()
-        FilterState[def.id] = not FilterState[def.id]
+        FilterState[def.id] = not (FilterState[def.id] == true)
         setFromState()
     end)
 
     label.MouseButton1Click:Connect(function()
-        FilterState[def.id] = not FilterState[def.id]
+        FilterState[def.id] = not (FilterState[def.id] == true)
         setFromState()
     end)
 
@@ -303,7 +304,7 @@ end
 updateFilterCanvas()
 
 --------------------------------------------------
---  PANEL KANAN: LOG CHAT + SUBTITLE
+--  PANEL KANAN: LOG CHAT + SUBTITLE + CHAT FILTER TOGGLE
 --------------------------------------------------
 local rightPanel = Instance.new("Frame")
 rightPanel.Name = "RightPanel"
@@ -324,10 +325,67 @@ rightTitle.TextXAlignment = Enum.TextXAlignment.Left
 rightTitle.Text = "Log + Subtitle"
 rightTitle.Parent = rightPanel
 
+-- === Chat Filter: ON/OFF (master switch) ===
+local chatFilterRow = Instance.new("Frame")
+chatFilterRow.Name = "ChatFilterRow"
+chatFilterRow.Size = UDim2.new(1, 0, 0, 24)
+chatFilterRow.Position = UDim2.new(0, 0, 0, 22)
+chatFilterRow.BackgroundTransparency = 1
+chatFilterRow.Parent = rightPanel
+
+local cfLabel = Instance.new("TextLabel")
+cfLabel.Name = "CFLabel"
+cfLabel.Size = UDim2.new(0.5, -4, 1, 0)
+cfLabel.Position = UDim2.new(0, 0, 0, 0)
+cfLabel.BackgroundTransparency = 1
+cfLabel.Font = Enum.Font.Gotham
+cfLabel.TextSize = 12
+cfLabel.TextXAlignment = Enum.TextXAlignment.Left
+cfLabel.TextColor3 = Color3.fromRGB(80, 80, 110)
+cfLabel.Text = "Chat Filter:"
+cfLabel.Parent = chatFilterRow
+
+local cfToggle = Instance.new("TextButton")
+cfToggle.Name = "CFToggle"
+cfToggle.Size = UDim2.new(0, 70, 0, 20)
+cfToggle.AnchorPoint = Vector2.new(1, 0.5)
+cfToggle.Position = UDim2.new(1, -4, 0.5, 0)
+cfToggle.BackgroundColor3 = Color3.fromRGB(90, 160, 250)
+cfToggle.BorderSizePixel = 0
+cfToggle.Font = Enum.Font.GothamBold
+cfToggle.TextSize = 12
+cfToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+cfToggle.Text = "ON"
+cfToggle.AutoButtonColor = true
+cfToggle.Parent = chatFilterRow
+Instance.new("UICorner", cfToggle).CornerRadius = UDim.new(1, 0)
+
+local function refreshChatFilterToggle()
+    if ChatFilterEnabled then
+        cfToggle.Text = "ON"
+        cfToggle.BackgroundColor3 = Color3.fromRGB(90, 160, 250)
+        cfToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        cfLabel.TextColor3 = Color3.fromRGB(80, 80, 110)
+    else
+        cfToggle.Text = "OFF"
+        cfToggle.BackgroundColor3 = Color3.fromRGB(200, 200, 210)
+        cfToggle.TextColor3 = Color3.fromRGB(60, 60, 80)
+        cfLabel.TextColor3 = Color3.fromRGB(140, 80, 80)
+    end
+end
+
+cfToggle.MouseButton1Click:Connect(function()
+    ChatFilterEnabled = not ChatFilterEnabled
+    refreshChatFilterToggle()
+end)
+
+refreshChatFilterToggle()
+
+-- === LOG FRAME (dipush turun karena ada ChatFilterRow) ===
 local logFrame = Instance.new("Frame")
 logFrame.Name = "LogFrame"
-logFrame.Position = UDim2.new(0, 0, 0, 22)
-logFrame.Size = UDim2.new(1, 0, 1, -60)
+logFrame.Position = UDim2.new(0, 0, 0, 48) -- 22 (judul) + 24 (ChatFilter) + 2 gap
+logFrame.Size = UDim2.new(1, 0, 1, -86)   -- disesuaikan supaya nggak tabrakan subtitle
 logFrame.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
 logFrame.BorderSizePixel = 0
 logFrame.Parent = rightPanel
@@ -367,7 +425,10 @@ end
 logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     updateLogCanvas()
     -- auto scroll ke bawah
-    logScroll.CanvasPosition = Vector2.new(0, math.max(0, logScroll.CanvasSize.Y.Offset - logScroll.AbsoluteWindowSize.Y))
+    logScroll.CanvasPosition = Vector2.new(
+        0,
+        math.max(0, logScroll.CanvasSize.Y.Offset - logScroll.AbsoluteWindowSize.Y)
+    )
 end)
 
 -- Subtitle besar bawah
@@ -432,6 +493,11 @@ end
 --  UTIL: FILTER CHECK
 --------------------------------------------------
 local function passFilter(opts)
+    -- Master switch: kalau ChatFilterEnabled = false, semua lolos
+    if not ChatFilterEnabled then
+        return true
+    end
+
     -- opts: {IsSystem, IsSpecialUser, IsMythic, ChannelType}
     local isSystem   = opts.IsSystem   or false
     local isSpecial  = opts.IsSpecialUser or false
@@ -606,7 +672,7 @@ _G.AxaChatRelay_ReceiveSTT = handleSTT
 -- Flush queue yang sudah dikumpulkan sebelum TAB ini kebuka
 for _, args in ipairs(sttQueue) do
     local ok, err = pcall(function()
-        handleSTT(unpack(args))
+        handleSTT(table.unpack(args))
     end)
     if not ok then
         warn("[Axa ChatPublik] Gagal proses STT queue:", err)
@@ -675,8 +741,9 @@ end
 --  EXPOSE DI _G (OPTIONAL)
 --------------------------------------------------
 _G.AxaChatPublik = {
-    FilterState   = FilterState,
-    AddLogLine    = addLogLine,
-    IsSpecialUser = isSpecialUser,
-    IsMythicCatch = isMythicCatch,
+    FilterState        = FilterState,
+    ChatFilterEnabled  = function() return ChatFilterEnabled end,
+    AddLogLine         = addLogLine,
+    IsSpecialUser      = isSpecialUser,
+    IsMythicCatch      = isMythicCatch,
 }
