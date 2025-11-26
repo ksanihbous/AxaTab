@@ -1,26 +1,25 @@
 --------------------------------------------------
--- AxaTab_Webhook (fungsi diperbaiki)
+-- AxaTab_Webhook - Backpack View → Discord
 --------------------------------------------------
+
 local webhookTabFrame = createTabContent("webhook")
 createTabButton("webhook", "Webhook", 3)
 
-local Players            = Players or game:GetService("Players")
-local HttpService        = HttpService or game:GetService("HttpService")
-local MarketplaceService = game:GetService("MarketplaceService")
+-- Ambil service dari env CORE (kalau ada), fallback ke GetService
+local Players     = Players     or game:GetService("Players")
+local HttpService = HttpService or game:GetService("HttpService")
 
 local WEBHOOK_URL    = "https://discord.com/api/webhooks/1440379761389080597/yRL_Ek5RSttD-cMVPE6f0VtfpuRdMcVOjq4IkqtFOycPKjwFCiojViQGwXd_7AqXRM2P"
 local BOT_AVATAR_URL = "https://mylogo.edgeone.app/Logo%20Ax%20(NO%20BG).png"
 
--- Discord embed batas aman (biar nggak kena 4k char)
+-- Biar aman dari limit Discord
 local MAX_DESC       = 3600
 
--- Heuristik deteksi ikan
 local FISH_KEYWORDS = {
     "ikan","fish","mirethos","kaelvorn","kraken",
     "shark","whale","ray","eel","salmon","tuna","cod"
 }
 
--- Daftar favorit (deteksi by name contains)
 local FAVORITE_FISH_NAMES = {
     "lumba pink",
     "lele",
@@ -28,11 +27,21 @@ local FAVORITE_FISH_NAMES = {
     "kaelvorn",
 }
 
--- ---------- UTIL TEKS / PARSE ----------
-local function safeLower(s) return (typeof(s)=="string") and s:lower() or "" end
+local function safeLower(s)
+    return (typeof(s) == "string") and s:lower() or ""
+end
+
+local function isFavoriteBaseName(baseName)
+    local l = safeLower(baseName)
+    for _, fav in ipairs(FAVORITE_FISH_NAMES) do
+        if l:find(fav, 1, true) then
+            return true
+        end
+    end
+    return false
+end
 
 local function extractFishWeightKg(name)
-    -- Ambil angka "xx.x kg" atau "xx.x"
     if not name then return nil end
     local lower = string.lower(name)
     local numStr = lower:match("(%d+%.?%d*)%s*kg") or lower:match("(%d+%.?%d*)")
@@ -43,95 +52,25 @@ local function extractFishWeightKg(name)
 end
 
 local function getFishBaseName(rawName)
-    -- Bersihin dekorasi & angka
-    if not rawName or rawName == "" then return "Unknown Fish" end
+    if not rawName or rawName == "" then
+        return "Unknown Fish"
+    end
+
     local name = rawName
-    name = name:gsub("%b[]", "")
-    name = name:gsub("%b()", "")
-    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")
-    name = name:gsub("%s*%d+[%d%.]*$", "")
-    name = name:gsub("^%s+", ""):gsub("%s+$", "")
-    if name == "" then name = rawName end
+    name = name:gsub("%b[]", "")                   -- hapus [tag]
+    name = name:gsub("%b()", "")                   -- hapus (tag)
+    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")     -- hapus "xx kg"
+    name = name:gsub("%s*%d+[%d%.]*$", "")         -- hapus angka di belakang
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")  -- trim
+    if name == "" then
+        name = rawName
+    end
     return name
 end
 
-local function isFishName(raw)
-    local l = safeLower(raw)
-    for _, k in ipairs(FISH_KEYWORDS) do
-        if l:find(k, 1, true) then return true end
-    end
-    return false
-end
-
-local function isRodName(raw)
-    local l = safeLower(raw)
-    return l:find("rod", 1, true) or l:find("pancing", 1, true) or l:find("fishing", 1, true)
-end
-
-local function isFavoriteFishName(name)
-    local l = safeLower(name)
-    for _, fav in ipairs(FAVORITE_FISH_NAMES) do
-        if l:find(fav, 1, true) then return true end
-    end
-    return false
-end
-
-local function safeTruncate(s, maxLen)
-    if not s then return "" end
-    if #s <= maxLen then return s end
-    return s:sub(1, maxLen-10) .. "\n...[dipotong]"
-end
-
--- ---------- INFO SERVER / WITA ----------
-local PLACE_NAME = "Unknown Place"
-local PLACE_ID   = game.PlaceId or 0
-
-do
-    local ok, result = pcall(function()
-        return MarketplaceService:GetProductInfo(PLACE_ID)
-    end)
-    if ok and result and result.Name then
-        PLACE_NAME = result.Name
-    end
-end
-
-local function slugifyPlaceName(name)
-    local slug = name or ""
-    slug = slug:gsub("[^%w]+", "-")
-    slug = slug:gsub("%-+", "-")
-    slug = slug:gsub("^%-", ""):gsub("%-$", "")
-    if slug == "" then slug = tostring(PLACE_ID) end
-    return slug
-end
-
-local PLACE_SLUG = slugifyPlaceName(PLACE_NAME)
-local PLACE_URL  = string.format("https://www.roblox.com/id/games/%d/%s", PLACE_ID, PLACE_SLUG)
-
-local WITA_OFFSET_SECONDS = 8 * 60 * 60
-local MONTH_NAMES_ID = {
-    "Januari","Februari","Maret","April","Mei","Juni",
-    "Juli","Agustus","September","Oktober","November","Desember"
-}
-local function getWITA()
-    local utc = os.time()
-    local wita = utc + WITA_OFFSET_SECONDS
-    local t = os.date("!*t", wita)
-    local tanggalStr = string.format("%02d %s %04d", t.day, MONTH_NAMES_ID[t.month] or t.month, t.year)
-    local waktuStr   = string.format("%02d:%02d WITA", t.hour, t.min)
-    return tanggalStr .. ", " .. waktuStr
-end
-
--- ---------- HTTP REQUEST DETECT ----------
-local function detectHttpRequest()
-    local req = nil
-    pcall(function() if syn and syn.request then req = syn.request end end)
-    if not req then pcall(function() if http and http.request then req = http.request end end) end
-    if not req and http_request then req = http_request end
-    if not req and request then req = request end
-    return req
-end
-
--- ---------- UI (yang sudah ada dari kamu) ----------
+--------------------------------------------------
+-- UI HEADER
+--------------------------------------------------
 local whHeader = Instance.new("TextLabel")
 whHeader.Name = "Header"
 whHeader.Size = UDim2.new(1, -10, 0, 22)
@@ -240,7 +179,9 @@ whLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     whList.CanvasSize = UDim2.new(0, 0, 0, whLayout.AbsoluteContentSize.Y + 10)
 end)
 
--- ---------- ROW & SELECTION ----------
+--------------------------------------------------
+-- ROW LIST & FILTER
+--------------------------------------------------
 local whRows           = {}
 local whSelected       = {}
 local whSelectAllState = false
@@ -336,316 +277,468 @@ local function removeWebhookRow(player)
 end
 
 local function refreshWebhookList()
+    -- tambah row baru kalau ada Player baru
     for _, pl in ipairs(Players:GetPlayers()) do
         if not whRows[pl] then
             createWebhookRow(pl)
         end
     end
+    -- buang row kalau player sudah leave
     for pl, _ in pairs(whRows) do
         local stillHere = false
         for _, p in ipairs(Players:GetPlayers()) do
-            if p == pl then stillHere = true break end
+            if p == pl then
+                stillHere = true
+                break
+            end
         end
         if not stillHere then
             removeWebhookRow(pl)
         end
     end
+
     applyWebhookSearchFilter()
 end
 
 whSearchBox:GetPropertyChangedSignal("Text"):Connect(applyWebhookSearchFilter)
-Players.PlayerAdded:Connect(function(pl) createWebhookRow(pl); applyWebhookSearchFilter() end)
-Players.PlayerRemoving:Connect(function(pl) removeWebhookRow(pl) end)
+
+Players.PlayerAdded:Connect(function(pl)
+    createWebhookRow(pl)
+    applyWebhookSearchFilter()
+end)
+
+Players.PlayerRemoving:Connect(function(pl)
+    removeWebhookRow(pl)
+end)
+
 refreshWebhookList()
 
 whSelectAll.MouseButton1Click:Connect(function()
     whSelectAllState = not whSelectAllState
+
     for pl, row in pairs(whRows) do
         whSelected[pl] = whSelectAllState
         local chk = row:FindFirstChild("Check")
         if chk and chk:IsA("TextButton") then
             chk.Text = whSelectAllState and "☑" or "☐"
-            chk.BackgroundColor3 = whSelectAllState and Color3.fromRGB(140, 190, 255) or Color3.fromRGB(215,215,230)
+            chk.BackgroundColor3 = whSelectAllState and Color3.fromRGB(140, 190, 255)
+                or Color3.fromRGB(215,215,230)
         end
     end
+
     whSelectAll.Text = whSelectAllState and "Unselect All" or "Select All"
 end)
 
--- ---------- KOLEKSI INVENTORY ----------
-local function collectInventoryFor(player)
-    local data = {
-        rods   = {},    -- list nama rod
-        fish   = {},    -- map baseName -> {count=, sumKg=, maxKg=}
-        other  = {},    -- selain rod/fish
-        totals = { rod = 0, fish = 0, fishKg = 0, other = 0 },
-        favorites = {}  -- list {name, count, maxKg}
-    }
+--------------------------------------------------
+-- FUNGSI BACKPACK → KATEGORI
+--------------------------------------------------
 
-    local function pushFish(rawName)
-        local base = getFishBaseName(rawName)
-        local wkg  = extractFishWeightKg(rawName) or 0
-        local rec  = data.fish[base]
-        if not rec then
-            rec = { count = 0, sumKg = 0, maxKg = 0 }
-            data.fish[base] = rec
+-- ✅ FIX: pakai FindFirstChild, bukan FindChild (yang bikin error)
+local function getBackpackCategoriesForWebhook(player)
+    local rods, fish, others = {}, {}, {}
+
+    local function classifyTool(tool)
+        local name  = tool.Name
+        local lower = string.lower(name)
+
+        -- Rod dulu
+        if lower:find("rod") or lower:find("pancing") then
+            table.insert(rods, name)
+            return
         end
-        rec.count += 1
-        rec.sumKg += wkg
-        if wkg > rec.maxKg then rec.maxKg = wkg end
-        data.totals.fish += 1
-        data.totals.fishKg += wkg
+
+        -- Ikan based on keyword
+        for _, kw in ipairs(FISH_KEYWORDS) do
+            if lower:find(kw, 1, true) then
+                table.insert(fish, name)
+                return
+            end
+        end
+
+        -- Lainnya
+        table.insert(others, name)
     end
 
-    local function scanContainer(container)
+    local function scan(container)
         if not container then return end
-        for _, inst in ipairs(container:GetChildren()) do
-            if inst:IsA("Tool") or inst:IsA("Model") or inst:IsA("Folder") then
-                local nm = inst.Name or "Item"
-                if isFishName(nm) then
-                    pushFish(nm)
-                elseif isRodName(nm) then
-                    table.insert(data.rods, nm)
-                    data.totals.rod += 1
-                else
-                    table.insert(data.other, nm)
-                    data.totals.other += 1
-                end
-            elseif inst:IsA("Tool") == false and inst:IsA("Accessory") == false and inst.Name then
-                -- fallback: beberapa game simpan item bukan Tool
-                local nm = inst.Name
-                if isFishName(nm) then
-                    pushFish(nm)
-                end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Tool") then
+                classifyTool(child)
             end
         end
     end
 
-    scanContainer(player:FindFirstChildOfClass("Backpack"))
-    scanContainer(player.Character)
+    scan(player:FindFirstChild("Backpack"))
+    scan(player.Character)
 
-    -- Favorites summary
-    for baseName, rec in pairs(data.fish) do
-        if isFavoriteFishName(baseName) then
-            table.insert(data.favorites, { name = baseName, count = rec.count, maxKg = rec.maxKg })
+    return rods, fish, others
+end
+
+local function buildWebhookBlockForPlayer(pl, rods, fish, others)
+    if not rods or not fish or not others then
+        rods, fish, others = getBackpackCategoriesForWebhook(pl)
+    end
+
+    local parts = {}
+
+    table.insert(parts, string.format("**%s (@%s)**", pl.DisplayName or pl.Name, pl.Name))
+
+    local function addCategory(label, list)
+        if #list == 0 then return end
+        table.insert(parts, label .. ":")
+        for i, itemName in ipairs(list) do
+            table.insert(parts, string.format("  %d. %s", i, itemName))
         end
     end
-    table.sort(data.favorites, function(a,b) return a.name < b.name end)
 
-    return data
+    addCategory("Rod",     rods)
+    addCategory("Ikan",    fish)
+    addCategory("Lainnya", others)
+
+    return table.concat(parts, "\n")
 end
 
--- ---------- FORMAT TEKS LIST ----------
-local function makeNumberedLinesFromFishMap(fishMap)
-    local entries = {}
-    for name, rec in pairs(fishMap) do
-        table.insert(entries, { name = name, count = rec.count, sumKg = rec.sumKg, maxKg = rec.maxKg })
-    end
-    table.sort(entries, function(a,b)
-        if a.count == b.count then return a.name < b.name end
-        return a.count > b.count
-    end)
+--------------------------------------------------
+-- HTTP REQUEST → DISCORD
+--------------------------------------------------
 
-    local lines = {}
-    for i, e in ipairs(entries) do
-        local line = string.format("%d) %s — %dx (Σ %.2f kg; max %.2f kg)", i, e.name, e.count, e.sumKg, e.maxKg)
-        table.insert(lines, line)
-    end
-    return lines
+local function getRequestFunction()
+    local g = getgenv and getgenv() or _G
+
+    local req =
+        (syn and syn.request)
+        or (g and (g.request or g.http_request))
+        or (g and g.http_request)
+        or (http and (http.request or http_request))
+        or http_request
+        or request
+
+    return req
 end
 
-local function makeFavoritesLines(favs)
-    if #favs == 0 then return {"(Tidak ada ikan favorite yang terdeteksi)"} end
-    local out = {}
-    for i, f in ipairs(favs) do
-        table.insert(out, string.format("%d) %s — %dx (max %.2f kg) (Favorite)", i, f.name, f.count, f.maxKg))
-    end
-    return out
-end
+local function postDiscord(payloadTable)
+    local body = HttpService:JSONEncode(payloadTable)
 
--- ---------- KIRIM DISCORD ----------
-local function sendDiscordEmbeds(req, embeds, username, avatar)
-    if not req then return false end
-    local payload = {
-        username   = username or "Axa Backview",
-        avatar_url = avatar   or BOT_AVATAR_URL,
-        embeds     = embeds
-    }
-    local ok, err = pcall(function()
-        req({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
-    if not ok then warn("[Webhook] gagal kirim:", err) end
-    return ok
-end
-
-local function makeBaseFieldsFor(player)
-    local avatar = string.format("https://www.roblox.com/avatar-thumbnail/image?userId=%d&width=420&height=420&format=png", player.UserId)
-    local pengirim = table.concat({
-        "Username: " .. player.Name,
-        "DisplayName: " .. player.DisplayName,
-        "UserId: " .. tostring(player.UserId),
-        "ProfileUrl: https://www.roblox.com/id/users/"..tostring(player.UserId).."/profile"
-    }, "\n")
-
-    local server = table.concat({
-        "PlaceName: " .. PLACE_NAME,
-        "PlaceId: " .. tostring(PLACE_ID),
-        "PlaceUrl: " .. PLACE_URL,
-        "JobId: " .. tostring(game.JobId or "N/A"),
-        "Players: " .. tostring(#Players:GetPlayers())
-    }, "\n")
-
-    local fields = {
-        { name = "Pengirim", value  = "```yaml\n"..pengirim.."\n```", inline = false },
-        { name = "Server",   value  = "```yaml\n"..server.."\n```", inline  = false },
-        { name = "Timestamp",value  = "```yaml\nTanggal: "..getWITA().."\n```", inline = false },
-    }
-    return fields, avatar
-end
-
-local function buildEmbedsForPlayer(player, inv)
-    local embeds = {}
-
-    local fields, avatar = makeBaseFieldsFor(player)
-
-    -- PART 1: Summary
-    local desc1 = table.concat({
-        "**Ringkasan Inventory**",
-        string.format("- Rod: %d", inv.totals.rod),
-        string.format("- Fish: %d (Σ %.2f kg)", inv.totals.fish, inv.totals.fishKg),
-        string.format("- Other: %d", inv.totals.other),
-        "",
-        "**Rod List (nama):**",
-        (#inv.rods > 0) and ("- " .. table.concat(inv.rods, ", ")) or "(tidak ada)",
-    }, "\n")
-
-    table.insert(embeds, {
-        title       = "🎣 Backpack View — Summary (Part 1)",
-        description = safeTruncate(desc1, MAX_DESC),
-        color       = 0x33CCFF,
-        fields      = fields,
-        thumbnail   = { url = avatar },
-        footer      = { text = getWITA() },
-    })
-
-    -- PART 2..N: Fish per nama (dinomori, autosplit)
-    local fishLines = makeNumberedLinesFromFishMap(inv.fish)
-    if #fishLines == 0 then
-        table.insert(embeds, {
-            title       = "🐟 Fish List (Kosong) (Part 2)",
-            description = "(Tidak ada ikan yang terdeteksi di Backpack/Character).",
-            color       = 0x00D1B2,
-            footer      = { text = getWITA() },
-            thumbnail   = { url = avatar },
-        })
-    else
-        local chunk = {}
-        local length = 0
-        local partIdx = 2
-        local function pushChunk()
-            if #chunk == 0 then return end
-            local desc = table.concat(chunk, "\n")
-            table.insert(embeds, {
-                title       = string.format("🐟 Fish List (Part %d)", partIdx),
-                description = safeTruncate(desc, MAX_DESC),
-                color       = 0x00D1B2,
-                footer      = { text = getWITA() },
-                thumbnail   = { url = avatar },
+    -- 1) Coba dulu fungsi HTTP dari executor (lebih aman untuk Discord)
+    local req = getRequestFunction()
+    if req then
+        local ok, res = pcall(function()
+            return req({
+                Url     = WEBHOOK_URL,
+                Method  = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body    = body
             })
-            partIdx += 1
-            chunk = {}
-            length = 0
-        end
+        end)
 
-        for _, line in ipairs(fishLines) do
-            local addLen = #line + 1
-            if length + addLen > MAX_DESC then
-                pushChunk()
+        if ok then
+            -- beberapa executor return StatusCode, beberapa nggak
+            local status = res and (res.StatusCode or res.Status) or nil
+            if status == nil or status == 200 or status == 204 then
+                return true, nil
             end
-            table.insert(chunk, line)
-            length += addLen
-        end
-        pushChunk()
-    end
-
-    -- PART LAST: Favorites + Jumlah Rod (sesuai permintaan “Jumlah Rod di bagian Part paling akhir”)
-    local favLines = makeFavoritesLines(inv.favorites)
-    local tail = table.concat({
-        "**Favorite Fish**",
-        table.concat(favLines, "\n"),
-        "",
-        string.format("**Jumlah Rod:** %d", inv.totals.rod),
-        string.format("**Total Fish:** %d (Σ %.2f kg)", inv.totals.fish, inv.totals.fishKg),
-    }, "\n")
-
-    table.insert(embeds, {
-        title       = "⭐ Rekap Favorit & Total (Part Akhir)",
-        description = safeTruncate(tail, MAX_DESC),
-        color       = 0xFFAA33,
-        footer      = { text = getWITA() },
-        thumbnail   = { url = avatar },
-    })
-
-    -- Numerasi judul (Part X/Y)
-    local totalParts = #embeds
-    for i, em in ipairs(embeds) do
-        em.title = string.format("%s — [%d/%d]", em.title, i, totalParts)
-    end
-
-    return embeds
-end
-
--- ---------- HANDLE KLIK SEND ----------
-local function getSelectedPlayers()
-    local list = {}
-    for pl, sel in pairs(whSelected) do
-        if sel and pl and pl.Parent == Players then
-            table.insert(list, pl)
+            return false, "HTTP status " .. tostring(status)
+        else
+            return false, "Executor request error"
         end
     end
-    table.sort(list, function(a,b) return (a.DisplayName or a.Name) < (b.DisplayName or b.Name) end)
-    return list
+
+    -- 2) Fallback ke HttpService:PostAsync (kalau diizinkan)
+    local ok, errMsg = pcall(function()
+        return HttpService:PostAsync(
+            WEBHOOK_URL,
+            body,
+            Enum.HttpContentType.ApplicationJson,
+            false
+        )
+    end)
+
+    if not ok then
+        warn("[Axa Backview] Gagal kirim webhook:", errMsg)
+    end
+
+    return ok, errMsg
 end
 
-local sending = false
+--------------------------------------------------
+-- UTIL SPLIT TEKS
+--------------------------------------------------
+local function splitTextByLength(text, maxLen)
+    local chunks = {}
+    local current = ""
 
+    for line in (text .. "\n"):gmatch("(.-)\n") do
+        if #current == 0 then
+            current = line
+        else
+            local candidate = current .. "\n" .. line
+            if #candidate > maxLen then
+                table.insert(chunks, current)
+                current = line
+            else
+                current = candidate
+            end
+        end
+    end
+
+    if #current > 0 then
+        table.insert(chunks, current)
+    end
+
+    return chunks
+end
+
+--------------------------------------------------
+-- KUMPUL & KIRIM KE DISCORD
+--------------------------------------------------
+local function sendWebhookBackview()
+    local blocks = {}
+
+    local totalRods   = 0
+    local totalFish   = 0
+    local totalOthers = 0
+
+    -- range berat
+    local range_1_100    = 0
+    local range_101_400  = 0
+    local range_401_599  = 0
+    local range_600_799  = 0
+    local range_801_1000 = 0
+
+    local fishNameCounts = {}
+    local fishMaxWeight  = {}
+
+    local favoriteFishEntries = {}
+
+    for pl, _ in pairs(whRows) do
+        if whSelected[pl] and pl and pl.Parent == Players then
+            local rods, fish, others = getBackpackCategoriesForWebhook(pl)
+
+            totalRods   = totalRods   + #rods
+            totalFish   = totalFish   + #fish
+            totalOthers = totalOthers + #others
+
+            for _, fishName in ipairs(fish) do
+                local baseName = getFishBaseName(fishName)
+                fishNameCounts[baseName] = (fishNameCounts[baseName] or 0) + 1
+
+                local w = extractFishWeightKg(fishName)
+                if w then
+                    local curMax = fishMaxWeight[baseName]
+                    if not curMax or w > curMax then
+                        fishMaxWeight[baseName] = w
+                    end
+
+                    if w >= 1 and w <= 100 then
+                        range_1_100 = range_1_100 + 1
+                    elseif w >= 101 and w <= 400 then
+                        range_101_400 = range_101_400 + 1
+                    elseif w >= 401 and w <= 599 then
+                        range_401_599 = range_401_599 + 1
+                    elseif w >= 600 and w <= 799 then
+                        range_600_799 = range_600_799 + 1
+                    elseif w >= 800 and w <= 1000 then
+                        range_801_1000 = range_801_1000 + 1
+                    end
+                end
+
+                local lowerFishName = string.lower(fishName)
+                if lowerFishName:find("(favorite)", 1, true) or isFavoriteBaseName(baseName) then
+                    table.insert(favoriteFishEntries, {
+                        rawName  = fishName,
+                        baseName = baseName,
+                        weight   = w or 0
+                    })
+                end
+            end
+
+            table.insert(blocks, buildWebhookBlockForPlayer(pl, rods, fish, others))
+        end
+    end
+
+    if #blocks == 0 then
+        setWebhookStatus("Tidak ada player yang dicentang.")
+        return
+    end
+
+    local baseDesc = table.concat(blocks, "\n\n")
+
+    local summaryLines = {}
+
+    local totalTools = totalRods + totalFish + totalOthers
+
+    table.insert(summaryLines, string.format(
+        "**Total Rod:** %d  |  **Total Ikan:** %d  |  **Total Tools:** %d",
+        totalRods, totalFish, totalTools
+    ))
+
+    table.insert(summaryLines, string.format(
+        "**Total Berat Ikan (range):** 1-100 kg: %d, 101-400 kg: %d, 401-599 kg: %d, 600-799 kg: %d, 801-1000 kg: %d",
+        range_1_100, range_101_400, range_401_599, range_600_799, range_801_1000
+    ))
+
+    if next(fishNameCounts) ~= nil then
+        table.insert(summaryLines, "")
+        table.insert(summaryLines, "**Jumlah per Nama Ikan:**")
+
+        local fishArray = {}
+        for name, count in pairs(fishNameCounts) do
+            table.insert(fishArray, {
+                name      = name,
+                count     = count,
+                maxWeight = fishMaxWeight[name] or 0
+            })
+        end
+
+        table.sort(fishArray, function(a, b)
+            if a.count == b.count then
+                return a.name:lower() < b.name:lower()
+            end
+            return a.count > b.count
+        end)
+
+        local MAX_FISH_SUMMARY = 25
+        local shown = 0
+        local totalSpecies = #fishArray
+
+        for _, entry in ipairs(fishArray) do
+            if shown >= MAX_FISH_SUMMARY then
+                local remaining = totalSpecies - shown
+                if remaining > 0 then
+                    table.insert(summaryLines, string.format("  ...(+%d jenis ikan lainnya)", remaining))
+                end
+                break
+            end
+            -- upgrade dikit: tampilkan max berat juga
+            if entry.maxWeight > 0 then
+                table.insert(summaryLines, string.format("  - %s: %d (max %.1f Kg)", entry.name, entry.count, entry.maxWeight))
+            else
+                table.insert(summaryLines, string.format("  - %s: %d", entry.name, entry.count))
+            end
+            shown = shown + 1
+        end
+    end
+
+    if #favoriteFishEntries > 0 then
+        table.insert(summaryLines, "")
+        table.insert(summaryLines, "**Ikan Favorite:**")
+        table.sort(favoriteFishEntries, function(a, b)
+            return a.baseName:lower() < b.baseName:lower()
+        end)
+        for i, entry in ipairs(favoriteFishEntries) do
+            if entry.weight and entry.weight > 0 then
+                table.insert(summaryLines, string.format("%d. %s (%.1f Kg) (Favorite)", i, entry.baseName, entry.weight))
+            else
+                table.insert(summaryLines, string.format("%d. %s (Favorite)", i, entry.baseName))
+            end
+        end
+    end
+
+    local totalsText = table.concat(summaryLines, "\n")
+
+    local baseChunks = {}
+    if baseDesc ~= "" then
+        baseChunks = splitTextByLength(baseDesc, MAX_DESC)
+    end
+
+    local summaryChunks = {}
+    if totalsText ~= "" then
+        summaryChunks = splitTextByLength(totalsText, MAX_DESC)
+    end
+
+    local totalParts = #baseChunks + #summaryChunks
+    if totalParts == 0 then
+        setWebhookStatus("Tidak ada data backpack untuk dikirim.")
+        return
+    end
+
+    local allOk    = true
+    local firstErr = nil
+    local partIndex = 0
+
+    local function sendOnePart(desc, isSummary)
+        partIndex += 1
+
+        local title
+        if isSummary then
+            if totalParts > 1 then
+                title = string.format("📊 Ringkasan & Ikan Favorite (Part %d/%d)", partIndex, totalParts)
+            else
+                title = "📊 Ringkasan & Ikan Favorite"
+            end
+        else
+            if totalParts > 1 then
+                title = string.format("🎒 Backpack View (Part %d/%d)", partIndex, totalParts)
+            else
+                title = "🎒 Backpack View"
+            end
+        end
+
+        local payload = {
+            username   = "Axa Backview",
+            avatar_url = BOT_AVATAR_URL,
+            embeds = {{
+                title       = title,
+                description = desc,
+                color       = 0x5b8def
+            }}
+        }
+
+        local ok, err = postDiscord(payload)
+        if not ok then
+            allOk    = false
+            firstErr = firstErr or err
+        end
+    end
+
+    -- Part 1..N: detail Backpack
+    for _, desc in ipairs(baseChunks) do
+        sendOnePart(desc, false)
+        task.wait(0.15)
+    end
+
+    -- Part terakhir: Ringkasan + Ikan Favorite (sesuai permintaan)
+    for _, desc in ipairs(summaryChunks) do
+        sendOnePart(desc, true)
+        task.wait(0.15)
+    end
+
+    if allOk then
+        if totalParts == 1 then
+            setWebhookStatus("Terkirim ✅")
+        else
+            setWebhookStatus("Terkirim " .. totalParts .. " Part ✅")
+        end
+    else
+        setWebhookStatus("Sebagian error: " .. tostring(firstErr or "unknown"))
+    end
+end
+
+--------------------------------------------------
+-- KLIK BUTTON SEND
+--------------------------------------------------
 whSendBtn.MouseButton1Click:Connect(function()
-    if sending then return end
-    local req = detectHttpRequest()
-    if not req then
-        setWebhookStatus("Executor tidak mendukung http_request/syn.request.")
-        return
-    end
+    if whSendBtn.Text == "Sending..." then return end
 
-    local targets = getSelectedPlayers()
-    if #targets == 0 then
-        setWebhookStatus("Tidak ada player terpilih.")
-        return
-    end
-
-    sending = true
-    setWebhookStatus("Mengirim ("..tostring(#targets).." pemain)...")
+    whSendBtn.Text = "Sending..."
+    setWebhookStatus("Mengirim ke Discord...")
 
     task.spawn(function()
-        local okCount, failCount = 0, 0
-        for idx, pl in ipairs(targets) do
-            setWebhookStatus(string.format("Kumpulkan data: %s (%d/%d)...", pl.Name, idx, #targets))
-            local inv = collectInventoryFor(pl)
-
-            local embeds = buildEmbedsForPlayer(pl, inv)
-
-            setWebhookStatus(string.format("Kirim ke Discord: %s (%d/%d)...", pl.Name, idx, #targets))
-            local ok = sendDiscordEmbeds(req, embeds, "Axa Backview", BOT_AVATAR_URL)
-            if ok then okCount += 1 else failCount += 1 end
-
-            task.wait(0.25) -- jeda ringan antarpemain
+        local ok, err = pcall(sendWebhookBackview)
+        if not ok then
+            warn("[Axa Backview] Error fatal:", err)
+            setWebhookStatus("Error: " .. tostring(err))
         end
 
-        setWebhookStatus(string.format("Selesai. OK: %d, Gagal: %d", okCount, failCount))
-        sending = false
+        -- auto refresh BAG VIEW (kalau fungsi-nya memang ada) + Webhook list
+        if typeof(refreshBagAll) == "function" then
+            pcall(refreshBagAll)
+        end
+        refreshWebhookList()
+
+        task.wait(0.4)
+        if whSendBtn then
+            whSendBtn.Text = "Send to Discord"
+        end
     end)
 end)
