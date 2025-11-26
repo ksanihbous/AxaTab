@@ -100,7 +100,7 @@ local stillTime, totalDist = 0, 0
 local lastAutoStart, justRestarted = 0, false
 local afterRespawn = false
 
-local antiEnabled = false
+local antiEnabled = true
 local antiIdleConn = nil
 
 local function setStatus(text, color)
