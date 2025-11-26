@@ -38,7 +38,7 @@ sub.TextColor3 = Color3.fromRGB(90, 90, 120)
 sub.TextXAlignment = Enum.TextXAlignment.Left
 sub.TextYAlignment = Enum.TextYAlignment.Top
 sub.TextWrapped = true
-sub.Text = "Pilih player, nyalakan ESP (dengan jarak meter), spectate kamera, atau teleport ke target."
+sub.Text = "Pilih player, nyalakan ESP (dengan jarak meter), spectate kamera, spect free, atau teleport ke target."
 sub.Parent = frame
 
 ------------------------------------------------
@@ -98,7 +98,7 @@ topBar.Parent = frame
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(1, -220, 1, 0)
+statusLabel.Size = UDim2.new(1, -260, 1, 0)
 statusLabel.Position = UDim2.new(0, 0, 0, 0)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.Gotham
@@ -110,8 +110,8 @@ statusLabel.Parent = topBar
 
 local stopBtn = Instance.new("TextButton")
 stopBtn.Name = "StopSpectateButton"
-stopBtn.Size = UDim2.new(0, 100, 1, 0)
-stopBtn.Position = UDim2.new(1, -210, 0, 0)
+stopBtn.Size = UDim2.new(0, 110, 1, 0)
+stopBtn.Position = UDim2.new(1, -230, 0, 0)
 stopBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
 stopBtn.Font = Enum.Font.GothamBold
 stopBtn.TextSize = 13
@@ -125,8 +125,8 @@ stopCorner.Parent = stopBtn
 
 local espAllBtn = Instance.new("TextButton")
 espAllBtn.Name = "ESPAllButton"
-espAllBtn.Size = UDim2.new(0, 100, 1, 0)
-espAllBtn.Position = UDim2.new(1, -104, 0, 0)
+espAllBtn.Size = UDim2.new(0, 110, 1, 0)
+espAllBtn.Position = UDim2.new(1, -114, 0, 0)
 espAllBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
 espAllBtn.Font = Enum.Font.GothamBold
 espAllBtn.TextSize = 13
@@ -147,24 +147,42 @@ local activeESP             = {}
 local espAllOn              = false
 local STUDS_TO_METERS       = 1
 
+-- mode:
+-- "none"    : tidak spect
+-- "custom"  : camera scriptable di belakang target (mode lama)
+-- "free"    : CameraSubject = Humanoid (bebas putar kamera)
+local spectateMode          = "none"
+local respawnConn           = nil
+
 local function setSpectateStatus(text)
     statusLabel.Text = "Status: " .. text
 end
 
+local function disconnectRespawn()
+    if respawnConn then
+        respawnConn:Disconnect()
+        respawnConn = nil
+    end
+end
+
 local function stopSpectate()
     spectateLock          = true
+    disconnectRespawn()
     currentSpectateTarget = nil
+    spectateMode          = "none"
 
     local char = player.Character or player.CharacterAdded:Wait()
     local hum  = char:FindFirstChildOfClass("Humanoid")
     local cam  = workspace.CurrentCamera
 
     if hum and cam then
-        cam.CameraSubject = hum
-        cam.CameraType    = Enum.CameraType.Custom
+        cam.CameraSubject   = hum
+        cam.CameraType      = Enum.CameraType.Custom
+        cam.AudioListener   = Enum.CameraAudioListener.Camera
     elseif cam then
-        cam.CameraType = Enum.CameraType.Custom
+        cam.CameraType    = Enum.CameraType.Custom
         cam.CameraSubject = nil
+        cam.AudioListener = Enum.CameraAudioListener.Camera
     end
 
     spectateLock = false
@@ -183,6 +201,57 @@ end
 _G.AxaHub_StopSpectate = stopSpectate
 _G.AxaSpectate_Stop    = stopSpectate
 _G.Axa_StopSpectate    = stopSpectate
+
+------------------------------------------------
+-- SPECTATE MODE HELPERS
+------------------------------------------------
+
+-- Mode lama: kamera scriptable di belakang target (chase cam)
+local function startCustomSpectate(plr)
+    disconnectRespawn()
+    currentSpectateTarget = plr
+    spectateMode          = "custom"
+
+    if plr then
+        setSpectateStatus("Spectate → " .. (plr.DisplayName or plr.Name))
+    else
+        setSpectateStatus("Idle")
+    end
+end
+
+-- Mode baru: SPECT FREE (pakai CameraSubject, bebas putar kamera)
+local function startFreeSpectate(plr)
+    disconnectRespawn()
+    currentSpectateTarget = plr
+    spectateMode          = "free"
+
+    local cam = workspace.CurrentCamera
+    if plr and plr.Character and cam then
+        local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            cam.CameraSubject = hum
+            cam.CameraType    = Enum.CameraType.Custom
+            cam.AudioListener = Enum.CameraAudioListener.Character
+        end
+    end
+
+    -- follow karakter baru saat respawn, tetap SPECT FREE
+    respawnConn = plr and plr.CharacterAdded:Connect(function(char)
+        local hum2 = char:WaitForChild("Humanoid")
+        local cam2 = workspace.CurrentCamera
+        if cam2 and hum2 then
+            cam2.CameraSubject = hum2
+            cam2.CameraType    = Enum.CameraType.Custom
+            cam2.AudioListener = Enum.CameraAudioListener.Character
+        end
+    end) or nil
+
+    if plr then
+        setSpectateStatus("SPECT FREE → " .. (plr.DisplayName or plr.Name))
+    else
+        setSpectateStatus("Idle")
+    end
+end
 
 ------------------------------------------------
 -- ESP LOGIC
@@ -329,7 +398,7 @@ local function buildRow(plr)
 
     local content = Instance.new("Frame")
     content.Name = "Content"
-    content.Size = UDim2.new(0, 360, 1, 0) -- sementara, nanti di-set lagi setelah tombol dibuat
+    content.Size = UDim2.new(0, 420, 1, 0) -- sementara, di-set ulang setelah tombol dibuat
     content.BackgroundTransparency = 1
     content.BorderSizePixel = 0
     content.Parent = hScroll
@@ -346,10 +415,15 @@ local function buildRow(plr)
     nameLabel.Text = string.format("%s (@%s)", plr.DisplayName or plr.Name, plr.Name)
     nameLabel.Parent = content
 
+    -- Urutan tombol: ESP | Spectate | SPECT FREE | TP
+    local baseX   = 190
+    local btnW    = 60
+    local spacing = 4
+
     local espBtn = Instance.new("TextButton")
     espBtn.Name = "ESPBtn"
-    espBtn.Size = UDim2.new(0, 52, 0, 24)
-    espBtn.Position = UDim2.new(0, 190, 0.5, -12)
+    espBtn.Size = UDim2.new(0, btnW, 0, 24)
+    espBtn.Position = UDim2.new(0, baseX, 0.5, -12)
     espBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 230)
     espBtn.Font = Enum.Font.GothamBold
     espBtn.TextSize = 12
@@ -363,8 +437,8 @@ local function buildRow(plr)
 
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
-    spectateBtn.Size = UDim2.new(0, 62, 0, 24)
-    spectateBtn.Position = UDim2.new(0, 246, 0.5, -12)
+    spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 24)
+    spectateBtn.Position = UDim2.new(0, baseX + btnW + spacing, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
@@ -376,10 +450,25 @@ local function buildRow(plr)
     sc.CornerRadius = UDim.new(0, 8)
     sc.Parent = spectateBtn
 
+    local spectFreeBtn = Instance.new("TextButton")
+    spectFreeBtn.Name = "SpectFreeBtn"
+    spectFreeBtn.Size = UDim2.new(0, btnW + 12, 0, 24)
+    spectFreeBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 2 + 4, 0.5, -12)
+    spectFreeBtn.BackgroundColor3 = Color3.fromRGB(210, 220, 255)
+    spectFreeBtn.Font = Enum.Font.GothamBold
+    spectFreeBtn.TextSize = 12
+    spectFreeBtn.TextColor3 = Color3.fromRGB(40, 60, 120)
+    spectFreeBtn.Text = "SPECT FREE"
+    spectFreeBtn.Parent = content
+
+    local sfc = Instance.new("UICorner")
+    sfc.CornerRadius = UDim.new(0, 8)
+    sfc.Parent = spectFreeBtn
+
     local tpBtn = Instance.new("TextButton")
     tpBtn.Name = "TPBtn"
-    tpBtn.Size = UDim2.new(0, 52, 0, 24)
-    tpBtn.Position = UDim2.new(0, 316, 0.5, -12)
+    tpBtn.Size = UDim2.new(0, btnW, 0, 24)
+    tpBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 3 + 40, 0.5, -12)
     tpBtn.BackgroundColor3 = Color3.fromRGB(210, 240, 220)
     tpBtn.Font = Enum.Font.GothamBold
     tpBtn.TextSize = 12
@@ -392,9 +481,9 @@ local function buildRow(plr)
     tc.Parent = tpBtn
 
     -- Hitung lebar konten sebenarnya (biar scroll X benar)
-    local totalWidth = tpBtn.Position.X.Offset + tpBtn.Size.X.Offset + 8
-    content.Size = UDim2.new(0, totalWidth, 1, 0)
-    hScroll.CanvasSize = UDim2.new(0, totalWidth, 0, 0)
+    local lastRight = tpBtn.Position.X.Offset + tpBtn.Size.X.Offset + 8
+    content.Size = UDim2.new(0, lastRight, 1, 0)
+    hScroll.CanvasSize = UDim2.new(0, lastRight, 0, 0)
 
     espBtn.MouseButton1Click:Connect(function()
         local newState = not activeESP[plr]
@@ -410,8 +499,12 @@ local function buildRow(plr)
 
     spectateBtn.MouseButton1Click:Connect(function()
         if spectateLock then return end
-        currentSpectateTarget = plr
-        setSpectateStatus("Spectate → " .. (plr.DisplayName or plr.Name))
+        startCustomSpectate(plr)
+    end)
+
+    spectFreeBtn.MouseButton1Click:Connect(function()
+        if spectateLock then return end
+        startFreeSpectate(plr)
     end)
 
     tpBtn.MouseButton1Click:Connect(function()
@@ -444,6 +537,10 @@ players.PlayerRemoving:Connect(function(plr)
         rows[plr] = nil
     end
     setESPOnTarget(plr, false)
+
+    if plr == currentSpectateTarget then
+        stopSpectate()
+    end
 end)
 
 stopBtn.MouseButton1Click:Connect(function()
@@ -469,12 +566,26 @@ runService.RenderStepped:Connect(function()
     if currentSpectateTarget and not spectateLock then
         local cam  = workspace.CurrentCamera
         local char = currentSpectateTarget.Character
+
         if cam and char then
             local hrp = char:FindFirstChild("HumanoidRootPart")
+
             if hrp then
-                cam.CameraType = Enum.CameraType.Scriptable
-                local offset   = hrp.CFrame.LookVector * -8 + Vector3.new(0, 4, 0)
-                cam.CFrame     = CFrame.new(hrp.Position + offset, hrp.Position)
+                if spectateMode == "custom" then
+                    -- mode lama: kamera scriptable di belakang target
+                    cam.CameraType = Enum.CameraType.Scriptable
+                    local offset   = hrp.CFrame.LookVector * -8 + Vector3.new(0, 4, 0)
+                    cam.CFrame     = CFrame.new(hrp.Position + offset, hrp.Position)
+                    cam.AudioListener = Enum.CameraAudioListener.Camera
+                elseif spectateMode == "free" then
+                    -- mode baru: biarin CameraSubject handle, cukup pastikan type-nya Custom
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        cam.CameraType    = Enum.CameraType.Custom
+                        cam.CameraSubject = hum
+                        cam.AudioListener = Enum.CameraAudioListener.Character
+                    end
+                end
             end
         end
     end
