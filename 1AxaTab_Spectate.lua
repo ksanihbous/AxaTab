@@ -421,14 +421,20 @@ local function buildRow(plr)
     nameLabel.Parent = content
 
     -- Urutan tombol: ESP | Spectate | SPECT FREE | TP
-    local baseX   = 190
+    -- Dirapatkan: spacing kecil & tanpa gap ekstra di TP
+    local baseX   = 185
     local btnW    = 60
-    local spacing = 4
+    local spacing = 2
+
+    local espX        = baseX
+    local spectX      = baseX + btnW + spacing
+    local spectFreeX  = baseX + (btnW + spacing) * 2
+    local tpX         = spectFreeX + (btnW + 12) + spacing  -- nempel setelah tombol SPECT FREE
 
     local espBtn = Instance.new("TextButton")
     espBtn.Name = "ESPBtn"
     espBtn.Size = UDim2.new(0, btnW, 0, 24)
-    espBtn.Position = UDim2.new(0, baseX, 0.5, -12)
+    espBtn.Position = UDim2.new(0, espX, 0.5, -12)
     espBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 230)
     espBtn.Font = Enum.Font.GothamBold
     espBtn.TextSize = 12
@@ -443,7 +449,7 @@ local function buildRow(plr)
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
     spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 24)
-    spectateBtn.Position = UDim2.new(0, baseX + btnW + spacing, 0.5, -12)
+    spectateBtn.Position = UDim2.new(0, spectX, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
@@ -458,7 +464,7 @@ local function buildRow(plr)
     local spectFreeBtn = Instance.new("TextButton")
     spectFreeBtn.Name = "SpectFreeBtn"
     spectFreeBtn.Size = UDim2.new(0, btnW + 12, 0, 24)
-    spectFreeBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 2 + 4, 0.5, -12)
+    spectFreeBtn.Position = UDim2.new(0, spectFreeX, 0.5, -12)
     spectFreeBtn.BackgroundColor3 = Color3.fromRGB(210, 220, 255)
     spectFreeBtn.Font = Enum.Font.GothamBold
     spectFreeBtn.TextSize = 12
@@ -473,7 +479,7 @@ local function buildRow(plr)
     local tpBtn = Instance.new("TextButton")
     tpBtn.Name = "TPBtn"
     tpBtn.Size = UDim2.new(0, btnW, 0, 24)
-    tpBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 3 + 40, 0.5, -12)
+    tpBtn.Position = UDim2.new(0, tpX, 0.5, -12)
     tpBtn.BackgroundColor3 = Color3.fromRGB(210, 240, 220)
     tpBtn.Font = Enum.Font.GothamBold
     tpBtn.TextSize = 12
@@ -485,8 +491,8 @@ local function buildRow(plr)
     tc.CornerRadius = UDim.new(0, 8)
     tc.Parent = tpBtn
 
-    -- Hitung lebar konten sebenarnya (biar scroll X benar)
-    local lastRight = tpBtn.Position.X.Offset + tpBtn.Size.X.Offset + 8
+    -- Hitung lebar konten sebenarnya (biar scroll X benar, tapi tetap compact)
+    local lastRight = tpX + tpBtn.Size.X.Offset + 8
     content.Size = UDim2.new(0, lastRight, 1, 0)
     hScroll.CanvasSize = UDim2.new(0, lastRight, 0, 0)
 
