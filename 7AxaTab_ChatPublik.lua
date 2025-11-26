@@ -632,6 +632,47 @@ local subtitleGui
 local subtitleFrame
 local subtitleLines = {}
 
+-- helper: bersihkan Subtitle HUD (dipakai di Chat Filter OFF & ROOT_FRAME destroy)
+local function destroySubtitleUI()
+    -- reset buffer
+    subtitleLines = {}
+
+    -- hancurkan instance lokal kalau ada
+    if subtitleGui then
+        pcall(function()
+            subtitleGui:Destroy()
+        end)
+        subtitleGui = nil
+        subtitleFrame = nil
+    end
+
+    -- jaga-jaga kalau ada AxaSubtitleUI nyangkut di PlayerGui
+    local okPg, pg = pcall(function()
+        return playerGui or (LocalPlayer and (LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")))
+    end)
+    if okPg and pg then
+        local gui = pg:FindFirstChild("AxaSubtitleUI")
+        if gui then
+            pcall(function()
+                gui:Destroy()
+            end)
+        end
+    end
+
+    -- dan di CoreGui (kalau pernah dipasang di sana)
+    local okCg, coreGui = pcall(function()
+        return game:GetService("CoreGui")
+    end)
+    if okCg and coreGui then
+        local gui = coreGui:FindFirstChild("AxaSubtitleUI")
+        if gui then
+            pcall(function()
+                gui:Destroy()
+            end)
+        end
+    end
+end
+
 local function createSubtitleUI()
     if subtitleFrame and subtitleFrame.Parent then
         return
@@ -803,13 +844,8 @@ cfToggle.MouseButton1Click:Connect(function()
     if not CHAT_FILTER_ENABLED then
         -- OFF:
         -- 1) Matikan semua efek filter (sudah dijaga di shouldRelayChat + guard CHAT_FILTER_ENABLED)
-        -- 2) Hapus isi subtitleLines dan hancurkan UI 3 baris di bawah layar.
-        subtitleLines = {}
-        if subtitleGui then
-            subtitleGui:Destroy()
-            subtitleGui = nil
-            subtitleFrame = nil
-        end
+        -- 2) Bersihkan Subtitle HUD 3 baris di bawah layar (termasuk instance nyangkut).
+        destroySubtitleUI()
     else
         -- ON:
         -- Subtitle UI akan dibuat ulang otomatis ketika ada pesan baru
@@ -818,6 +854,20 @@ cfToggle.MouseButton1Click:Connect(function()
 end)
 
 refreshChatFilterToggle()
+
+-- Pastikan Subtitle HUD ikut hilang kalau ROOT_FRAME di-destroy (misal AxaHub ditutup)
+do
+    local root = ROOT_FRAME
+    if root then
+        root.AncestryChanged:Connect(function(_, parent)
+            if parent == nil then
+                -- UI CORE / TAB dihapus → matikan filter & bersihkan Subtitle HUD
+                CHAT_FILTER_ENABLED = false
+                destroySubtitleUI()
+            end
+        end)
+    end
+end
 
 ------------------------------------------------
 --  DETEKSI SYSTEM SPECIAL & KHUSUS (Mirethos / Kaelvorn)
@@ -1100,7 +1150,6 @@ _G.__AxaChat_SendHistoryFile = function()
     table.insert(bodyParts, "--" .. boundary .. "--")
 
     local body = table.concat(bodyParts, "\r\n")
-    local anyOk = false
 
     for _, url in ipairs(WEBHOOK_URLS) do
         if url and url ~= "" then
@@ -1117,14 +1166,10 @@ _G.__AxaChat_SendHistoryFile = function()
             if not ok then
                 warn("[Axa Chat Relay] Gagal kirim file historychat ke " .. tostring(url) .. ":", err)
             else
-                anyOk = true
+                print("[Axa Chat Relay] historychat.txt terkirim (batch " .. tostring(historyCount) .. " baris).")
+                resetHistoryBuffer()
             end
         end
-    end
-
-    if anyOk then
-        print("[Axa Chat Relay] historychat.txt terkirim (batch " .. tostring(historyCount) .. " baris).")
-        resetHistoryBuffer()
     end
 end
 
