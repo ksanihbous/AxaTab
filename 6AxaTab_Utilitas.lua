@@ -1,5 +1,5 @@
 --==========================================================
---  AxaTab_Util_JumpRunKompas.lua
+--  AxaTab_Utilitas.lua
 --  Fokus: ShiftRun + Infinite Jump + Kompas HUD (Top/Bottom)
 --  Env dari core:
 --      TAB_FRAME = Frame konten tab Util (sudah dibuat di core AxaHub)
