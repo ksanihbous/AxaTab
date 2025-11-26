@@ -1,18 +1,55 @@
 --------------------------------------------------
 -- AxaTab_Webhook - Backpack View → Discord
+-- Dipanggil oleh CORE via loadstring, env punya:
+--   TAB_ID, TAB_FRAME, CONTENT_HOLDER, Players, HttpService, dll
 --------------------------------------------------
 
-local webhookTabFrame = createTabContent("webhook")
-createTabButton("webhook", "Webhook", 3)
+--------------------------------------------------
+-- FRAME TAB (PAKAI DARI CORE)
+--------------------------------------------------
+local webhookTabFrame = TAB_FRAME
 
--- Ambil service dari env CORE (kalau ada), fallback ke GetService
-local Players     = Players     or game:GetService("Players")
+-- fallback kalau TAB_FRAME belum ada (misal test standalone)
+if not webhookTabFrame or not webhookTabFrame.Parent then
+    local playerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    local holder = CONTENT_HOLDER
+    if not holder then
+        holder = Instance.new("Frame")
+        holder.Name = "ContentHolder_Fallback"
+        holder.Size = UDim2.new(0, 480, 0, 280)
+        holder.Position = UDim2.new(0.5, -240, 0.5, -140)
+        holder.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+        holder.Parent = playerGui
+        local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 12); c.Parent = holder
+    end
+
+    webhookTabFrame = Instance.new("Frame")
+    webhookTabFrame.Name = "TabContent_webhook"
+    webhookTabFrame.Size = UDim2.new(1, -16, 1, -16)
+    webhookTabFrame.Position = UDim2.new(0, 8, 0, 8)
+    webhookTabFrame.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
+    webhookTabFrame.BorderSizePixel = 0
+    webhookTabFrame.Parent = holder
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 12)
+    c.Parent = webhookTabFrame
+
+    local s = Instance.new("UIStroke")
+    s.Thickness = 1
+    s.Color = Color3.fromRGB(210, 210, 225)
+    s.Transparency = 0.3
+    s.Parent = webhookTabFrame
+end
+
+--------------------------------------------------
+-- SERVICE / ENV
+--------------------------------------------------
+local Players     = (typeof(Players) == "table" or typeof(Players) == "userdata") and Players or game:GetService("Players")
 local HttpService = HttpService or game:GetService("HttpService")
 
 local WEBHOOK_URL    = "https://discord.com/api/webhooks/1440379761389080597/yRL_Ek5RSttD-cMVPE6f0VtfpuRdMcVOjq4IkqtFOycPKjwFCiojViQGwXd_7AqXRM2P"
 local BOT_AVATAR_URL = "https://mylogo.edgeone.app/Logo%20Ax%20(NO%20BG).png"
-
--- Biar aman dari limit Discord
 local MAX_DESC       = 3600
 
 local FISH_KEYWORDS = {
@@ -57,11 +94,11 @@ local function getFishBaseName(rawName)
     end
 
     local name = rawName
-    name = name:gsub("%b[]", "")                   -- hapus [tag]
-    name = name:gsub("%b()", "")                   -- hapus (tag)
-    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")     -- hapus "xx kg"
-    name = name:gsub("%s*%d+[%d%.]*$", "")         -- hapus angka di belakang
-    name = name:gsub("^%s+", ""):gsub("%s+$", "")  -- trim
+    name = name:gsub("%b[]", "")
+    name = name:gsub("%b()", "")
+    name = name:gsub("%s*%d+[%d%.]*%s*kg", "")
+    name = name:gsub("%s*%d+[%d%.]*$", "")
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
     if name == "" then
         name = rawName
     end
@@ -71,6 +108,10 @@ end
 --------------------------------------------------
 -- UI HEADER
 --------------------------------------------------
+for _, child in ipairs(webhookTabFrame:GetChildren()) do
+    child:Destroy()
+end
+
 local whHeader = Instance.new("TextLabel")
 whHeader.Name = "Header"
 whHeader.Size = UDim2.new(1, -10, 0, 22)
@@ -277,13 +318,12 @@ local function removeWebhookRow(player)
 end
 
 local function refreshWebhookList()
-    -- tambah row baru kalau ada Player baru
     for _, pl in ipairs(Players:GetPlayers()) do
         if not whRows[pl] then
             createWebhookRow(pl)
         end
     end
-    -- buang row kalau player sudah leave
+
     for pl, _ in pairs(whRows) do
         local stillHere = false
         for _, p in ipairs(Players:GetPlayers()) do
@@ -330,10 +370,8 @@ whSelectAll.MouseButton1Click:Connect(function()
 end)
 
 --------------------------------------------------
--- FUNGSI BACKPACK → KATEGORI
+-- BACKPACK → KATEGORI
 --------------------------------------------------
-
--- ✅ FIX: pakai FindFirstChild, bukan FindChild (yang bikin error)
 local function getBackpackCategoriesForWebhook(player)
     local rods, fish, others = {}, {}, {}
 
@@ -341,13 +379,11 @@ local function getBackpackCategoriesForWebhook(player)
         local name  = tool.Name
         local lower = string.lower(name)
 
-        -- Rod dulu
         if lower:find("rod") or lower:find("pancing") then
             table.insert(rods, name)
             return
         end
 
-        -- Ikan based on keyword
         for _, kw in ipairs(FISH_KEYWORDS) do
             if lower:find(kw, 1, true) then
                 table.insert(fish, name)
@@ -355,7 +391,6 @@ local function getBackpackCategoriesForWebhook(player)
             end
         end
 
-        -- Lainnya
         table.insert(others, name)
     end
 
@@ -399,12 +434,10 @@ local function buildWebhookBlockForPlayer(pl, rods, fish, others)
 end
 
 --------------------------------------------------
--- HTTP REQUEST → DISCORD
+-- HTTP → DISCORD
 --------------------------------------------------
-
 local function getRequestFunction()
     local g = getgenv and getgenv() or _G
-
     local req =
         (syn and syn.request)
         or (g and (g.request or g.http_request))
@@ -419,7 +452,6 @@ end
 local function postDiscord(payloadTable)
     local body = HttpService:JSONEncode(payloadTable)
 
-    -- 1) Coba dulu fungsi HTTP dari executor (lebih aman untuk Discord)
     local req = getRequestFunction()
     if req then
         local ok, res = pcall(function()
@@ -432,7 +464,6 @@ local function postDiscord(payloadTable)
         end)
 
         if ok then
-            -- beberapa executor return StatusCode, beberapa nggak
             local status = res and (res.StatusCode or res.Status) or nil
             if status == nil or status == 200 or status == 204 then
                 return true, nil
@@ -443,7 +474,6 @@ local function postDiscord(payloadTable)
         end
     end
 
-    -- 2) Fallback ke HttpService:PostAsync (kalau diizinkan)
     local ok, errMsg = pcall(function()
         return HttpService:PostAsync(
             WEBHOOK_URL,
@@ -489,7 +519,7 @@ local function splitTextByLength(text, maxLen)
 end
 
 --------------------------------------------------
--- KUMPUL & KIRIM KE DISCORD
+-- KUMPUL & KIRIM
 --------------------------------------------------
 local function sendWebhookBackview()
     local blocks = {}
@@ -498,7 +528,6 @@ local function sendWebhookBackview()
     local totalFish   = 0
     local totalOthers = 0
 
-    -- range berat
     local range_1_100    = 0
     local range_101_400  = 0
     local range_401_599  = 0
@@ -507,7 +536,6 @@ local function sendWebhookBackview()
 
     local fishNameCounts = {}
     local fishMaxWeight  = {}
-
     local favoriteFishEntries = {}
 
     for pl, _ in pairs(whRows) do
@@ -564,7 +592,6 @@ local function sendWebhookBackview()
     local baseDesc = table.concat(blocks, "\n\n")
 
     local summaryLines = {}
-
     local totalTools = totalRods + totalFish + totalOthers
 
     table.insert(summaryLines, string.format(
@@ -609,13 +636,18 @@ local function sendWebhookBackview()
                 end
                 break
             end
-            -- upgrade dikit: tampilkan max berat juga
             if entry.maxWeight > 0 then
-                table.insert(summaryLines, string.format("  - %s: %d (max %.1f Kg)", entry.name, entry.count, entry.maxWeight))
+                table.insert(summaryLines, string.format(
+                    "  - %s: %d (max %.1f Kg)",
+                    entry.name, entry.count, entry.maxWeight
+                ))
             else
-                table.insert(summaryLines, string.format("  - %s: %d", entry.name, entry.count))
+                table.insert(summaryLines, string.format(
+                    "  - %s: %d",
+                    entry.name, entry.count
+                ))
             end
-            shown = shown + 1
+            shown += 1
         end
     end
 
@@ -627,9 +659,15 @@ local function sendWebhookBackview()
         end)
         for i, entry in ipairs(favoriteFishEntries) do
             if entry.weight and entry.weight > 0 then
-                table.insert(summaryLines, string.format("%d. %s (%.1f Kg) (Favorite)", i, entry.baseName, entry.weight))
+                table.insert(summaryLines, string.format(
+                    "%d. %s (%.1f Kg) (Favorite)",
+                    i, entry.baseName, entry.weight
+                ))
             else
-                table.insert(summaryLines, string.format("%d. %s (Favorite)", i, entry.baseName))
+                table.insert(summaryLines, string.format(
+                    "%d. %s (Favorite)",
+                    i, entry.baseName
+                ))
             end
         end
     end
@@ -691,13 +729,11 @@ local function sendWebhookBackview()
         end
     end
 
-    -- Part 1..N: detail Backpack
     for _, desc in ipairs(baseChunks) do
         sendOnePart(desc, false)
         task.wait(0.15)
     end
 
-    -- Part terakhir: Ringkasan + Ikan Favorite (sesuai permintaan)
     for _, desc in ipairs(summaryChunks) do
         sendOnePart(desc, true)
         task.wait(0.15)
@@ -715,7 +751,7 @@ local function sendWebhookBackview()
 end
 
 --------------------------------------------------
--- KLIK BUTTON SEND
+-- BUTTON SEND
 --------------------------------------------------
 whSendBtn.MouseButton1Click:Connect(function()
     if whSendBtn.Text == "Sending..." then return end
@@ -730,7 +766,6 @@ whSendBtn.MouseButton1Click:Connect(function()
             setWebhookStatus("Error: " .. tostring(err))
         end
 
-        -- auto refresh BAG VIEW (kalau fungsi-nya memang ada) + Webhook list
         if typeof(refreshBagAll) == "function" then
             pcall(refreshBagAll)
         end
