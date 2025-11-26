@@ -12,6 +12,10 @@ local players     = Players
 local runService  = RunService
 local camera      = Camera
 
+-- STATE LIST ROW (untuk scroll horizontal global)
+local rows = {}
+local currentRowScrollX = 0
+
 ------------------------------------------------
 -- HEADER
 ------------------------------------------------
@@ -87,6 +91,43 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 
 ------------------------------------------------
+-- GLOBAL SCROLL HORIZONTAL UNTUK ROW
+------------------------------------------------
+local function applyRowScrollX()
+    for _, row in pairs(rows) do
+        local hScroll = row:FindFirstChild("RowScroll")
+        if hScroll and hScroll:IsA("ScrollingFrame") then
+            hScroll.CanvasPosition = Vector2.new(currentRowScrollX, 0)
+        end
+    end
+end
+
+local function computeMaxScrollX()
+    local maxX = 0
+    for _, row in pairs(rows) do
+        local hScroll = row:FindFirstChild("RowScroll")
+        if hScroll and hScroll:IsA("ScrollingFrame") then
+            local content = hScroll:FindFirstChild("Content")
+            if content then
+                local diff = math.max(0, content.AbsoluteSize.X - hScroll.AbsoluteSize.X)
+                if diff > maxX then
+                    maxX = diff
+                end
+            end
+        end
+    end
+    return maxX
+end
+
+local function scrollHorizontal(dir)
+    if dir == 0 then return end
+    local maxX = computeMaxScrollX()
+    local step = 40
+    currentRowScrollX = math.clamp(currentRowScrollX + dir * step, 0, maxX)
+    applyRowScrollX()
+end
+
+------------------------------------------------
 -- TOP BAR (STATUS + TOMBOL)
 ------------------------------------------------
 local topBar = Instance.new("Frame")
@@ -98,7 +139,7 @@ topBar.Parent = frame
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(1, -260, 1, 0)
+statusLabel.Size = UDim2.new(1, -300, 1, 0) -- dibuat sedikit lebih kecil krn ada tombol < dan >
 statusLabel.Position = UDim2.new(0, 0, 0, 0)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.Gotham
@@ -110,13 +151,13 @@ statusLabel.Parent = topBar
 
 local stopBtn = Instance.new("TextButton")
 stopBtn.Name = "StopSpectateButton"
-stopBtn.Size = UDim2.new(0, 110, 1, 0)
-stopBtn.Position = UDim2.new(1, -230, 0, 0)
+stopBtn.Size = UDim2.new(0, 80, 1, 0)
+stopBtn.Position = UDim2.new(1, -260, 0, 0)
 stopBtn.BackgroundColor3 = Color3.fromRGB(220, 80, 80)
 stopBtn.Font = Enum.Font.GothamBold
 stopBtn.TextSize = 13
 stopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-stopBtn.Text = "Stop Spectate"
+stopBtn.Text = "Stop"
 stopBtn.Parent = topBar
 
 local stopCorner = Instance.new("UICorner")
@@ -125,8 +166,8 @@ stopCorner.Parent = stopBtn
 
 local espAllBtn = Instance.new("TextButton")
 espAllBtn.Name = "ESPAllButton"
-espAllBtn.Size = UDim2.new(0, 110, 1, 0)
-espAllBtn.Position = UDim2.new(1, -114, 0, 0)
+espAllBtn.Size = UDim2.new(0, 100, 1, 0)
+espAllBtn.Position = UDim2.new(1, -174, 0, 0)
 espAllBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
 espAllBtn.Font = Enum.Font.GothamBold
 espAllBtn.TextSize = 13
@@ -137,6 +178,45 @@ espAllBtn.Parent = topBar
 local espAllCorner = Instance.new("UICorner")
 espAllCorner.CornerRadius = UDim.new(0, 8)
 espAllCorner.Parent = espAllBtn
+
+-- Tombol scroll HORIZONTAL global: "<" dan ">" di samping ESP ALL
+local scrollLeftBtn = Instance.new("TextButton")
+scrollLeftBtn.Name = "ScrollLeftBtn"
+scrollLeftBtn.Size = UDim2.new(0, 24, 0, 24)
+scrollLeftBtn.Position = UDim2.new(1, -64, 0.5, -12)
+scrollLeftBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 235)
+scrollLeftBtn.Font = Enum.Font.GothamBold
+scrollLeftBtn.TextSize = 14
+scrollLeftBtn.TextColor3 = Color3.fromRGB(60, 60, 90)
+scrollLeftBtn.Text = "<"
+scrollLeftBtn.Parent = topBar
+
+local slc = Instance.new("UICorner")
+slc.CornerRadius = UDim.new(0, 8)
+slc.Parent = scrollLeftBtn
+
+local scrollRightBtn = Instance.new("TextButton")
+scrollRightBtn.Name = "ScrollRightBtn"
+scrollRightBtn.Size = UDim2.new(0, 24, 0, 24)
+scrollRightBtn.Position = UDim2.new(1, -34, 0.5, -12)
+scrollRightBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 235)
+scrollRightBtn.Font = Enum.Font.GothamBold
+scrollRightBtn.TextSize = 14
+scrollRightBtn.TextColor3 = Color3.fromRGB(60, 60, 90)
+scrollRightBtn.Text = ">"
+scrollRightBtn.Parent = topBar
+
+local src = Instance.new("UICorner")
+src.CornerRadius = UDim.new(0, 8)
+src.Parent = scrollRightBtn
+
+scrollLeftBtn.MouseButton1Click:Connect(function()
+    scrollHorizontal(-1)
+end)
+
+scrollRightBtn.MouseButton1Click:Connect(function()
+    scrollHorizontal(1)
+end)
 
 ------------------------------------------------
 -- STATE & LOGIC
@@ -181,10 +261,7 @@ local function hardResetCameraToLocal()
     cam.AudioListener = Enum.CameraAudioListener.Camera
 end
 
--- STOP SPECTATE:
--- - Clear target & mode
--- - Reset kamera ke LocalPlayer (sama feel-nya dengan klik dock)
--- - Paksa status jadi Idle
+-- STOP SPECTATE
 local function stopSpectate()
     disconnectRespawn()
     currentSpectateTarget = nil
@@ -342,8 +419,6 @@ end
 ------------------------------------------------
 -- FILTER & ROW
 ------------------------------------------------
-local rows = {}
-
 local function matchesSearch(plr)
     local q = string.lower(searchBox.Text or "")
     if q == "" then return true end
@@ -421,20 +496,14 @@ local function buildRow(plr)
     nameLabel.Parent = content
 
     -- Urutan tombol: ESP | Spectate | SPECT FREE | TP
-    -- Dirapatkan: spacing kecil & tanpa gap ekstra di TP
-    local baseX   = 185
+    local baseX   = 190
     local btnW    = 60
-    local spacing = 2
-
-    local espX        = baseX
-    local spectX      = baseX + btnW + spacing
-    local spectFreeX  = baseX + (btnW + spacing) * 2
-    local tpX         = spectFreeX + (btnW + 12) + spacing  -- nempel setelah tombol SPECT FREE
+    local spacing = 4
 
     local espBtn = Instance.new("TextButton")
     espBtn.Name = "ESPBtn"
     espBtn.Size = UDim2.new(0, btnW, 0, 24)
-    espBtn.Position = UDim2.new(0, espX, 0.5, -12)
+    espBtn.Position = UDim2.new(0, baseX, 0.5, -12)
     espBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 230)
     espBtn.Font = Enum.Font.GothamBold
     espBtn.TextSize = 12
@@ -449,7 +518,7 @@ local function buildRow(plr)
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
     spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 24)
-    spectateBtn.Position = UDim2.new(0, spectX, 0.5, -12)
+    spectateBtn.Position = UDim2.new(0, baseX + btnW + spacing, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
@@ -464,7 +533,7 @@ local function buildRow(plr)
     local spectFreeBtn = Instance.new("TextButton")
     spectFreeBtn.Name = "SpectFreeBtn"
     spectFreeBtn.Size = UDim2.new(0, btnW + 12, 0, 24)
-    spectFreeBtn.Position = UDim2.new(0, spectFreeX, 0.5, -12)
+    spectFreeBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 2 + 4, 0.5, -12)
     spectFreeBtn.BackgroundColor3 = Color3.fromRGB(210, 220, 255)
     spectFreeBtn.Font = Enum.Font.GothamBold
     spectFreeBtn.TextSize = 12
@@ -479,7 +548,7 @@ local function buildRow(plr)
     local tpBtn = Instance.new("TextButton")
     tpBtn.Name = "TPBtn"
     tpBtn.Size = UDim2.new(0, btnW, 0, 24)
-    tpBtn.Position = UDim2.new(0, tpX, 0.5, -12)
+    tpBtn.Position = UDim2.new(0, baseX + (btnW + spacing) * 3 + 40, 0.5, -12)
     tpBtn.BackgroundColor3 = Color3.fromRGB(210, 240, 220)
     tpBtn.Font = Enum.Font.GothamBold
     tpBtn.TextSize = 12
@@ -491,10 +560,13 @@ local function buildRow(plr)
     tc.CornerRadius = UDim.new(0, 8)
     tc.Parent = tpBtn
 
-    -- Hitung lebar konten sebenarnya (biar scroll X benar, tapi tetap compact)
-    local lastRight = tpX + tpBtn.Size.X.Offset + 8
+    -- Hitung lebar konten sebenarnya (biar scroll X benar)
+    local lastRight = tpBtn.Position.X.Offset + tpBtn.Size.X.Offset + 8
     content.Size = UDim2.new(0, lastRight, 1, 0)
     hScroll.CanvasSize = UDim2.new(0, lastRight, 0, 0)
+
+    -- Sync dengan posisi scroll global saat ini
+    hScroll.CanvasPosition = Vector2.new(currentRowScrollX, 0)
 
     espBtn.MouseButton1Click:Connect(function()
         local newState = not activeESP[plr]
