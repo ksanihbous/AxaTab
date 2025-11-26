@@ -174,6 +174,11 @@ local ENTRIES = {
         url    = "https://raw.githubusercontent.com/GhostPlayer352/Test4/main/Invisible%20Gui",
         method = "HttpGetAsync",
     },
+    {
+        label  = "COPY AVA",
+        url    = "https://raw.githubusercontent.com/Nearastro/Nearastro/refs/heads/main/00CopyAvaFE.lua",
+        method = "HttpGetAsync",
+    },
 }
 
 if KEY_STRING and KEY_STRING ~= "" then
