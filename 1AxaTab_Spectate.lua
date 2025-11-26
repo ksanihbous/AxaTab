@@ -12,9 +12,8 @@ local players     = Players
 local runService  = RunService
 local camera      = Camera
 
--- STATE LIST ROW (untuk scroll horizontal global)
+-- Map Player -> Row Frame
 local rows = {}
-local currentRowScrollX = 0
 
 ------------------------------------------------
 -- HEADER
@@ -91,43 +90,6 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 end)
 
 ------------------------------------------------
--- GLOBAL SCROLL HORIZONTAL UNTUK ROW
-------------------------------------------------
-local function applyRowScrollX()
-    for _, row in pairs(rows) do
-        local hScroll = row:FindFirstChild("RowScroll")
-        if hScroll and hScroll:IsA("ScrollingFrame") then
-            hScroll.CanvasPosition = Vector2.new(currentRowScrollX, 0)
-        end
-    end
-end
-
-local function computeMaxScrollX()
-    local maxX = 0
-    for _, row in pairs(rows) do
-        local hScroll = row:FindFirstChild("RowScroll")
-        if hScroll and hScroll:IsA("ScrollingFrame") then
-            local content = hScroll:FindFirstChild("Content")
-            if content then
-                local diff = math.max(0, content.AbsoluteSize.X - hScroll.AbsoluteSize.X)
-                if diff > maxX then
-                    maxX = diff
-                end
-            end
-        end
-    end
-    return maxX
-end
-
-local function scrollHorizontal(dir)
-    if dir == 0 then return end
-    local maxX = computeMaxScrollX()
-    local step = 40
-    currentRowScrollX = math.clamp(currentRowScrollX + dir * step, 0, maxX)
-    applyRowScrollX()
-end
-
-------------------------------------------------
 -- TOP BAR (STATUS + TOMBOL)
 ------------------------------------------------
 local topBar = Instance.new("Frame")
@@ -139,7 +101,7 @@ topBar.Parent = frame
 
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(1, -300, 1, 0) -- dibuat sedikit lebih kecil krn ada tombol < dan >
+statusLabel.Size = UDim2.new(1, -300, 1, 0) -- dikurangi, krn ada < dan >
 statusLabel.Position = UDim2.new(0, 0, 0, 0)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Font = Enum.Font.Gotham
@@ -179,9 +141,9 @@ local espAllCorner = Instance.new("UICorner")
 espAllCorner.CornerRadius = UDim.new(0, 8)
 espAllCorner.Parent = espAllBtn
 
--- Tombol scroll HORIZONTAL global: "<" dan ">" di samping ESP ALL
+-- Tombol Spectate Prev / Next (bentuk < dan >)
 local scrollLeftBtn = Instance.new("TextButton")
-scrollLeftBtn.Name = "ScrollLeftBtn"
+scrollLeftBtn.Name = "SpectPrevBtn"
 scrollLeftBtn.Size = UDim2.new(0, 24, 0, 24)
 scrollLeftBtn.Position = UDim2.new(1, -64, 0.5, -12)
 scrollLeftBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 235)
@@ -196,7 +158,7 @@ slc.CornerRadius = UDim.new(0, 8)
 slc.Parent = scrollLeftBtn
 
 local scrollRightBtn = Instance.new("TextButton")
-scrollRightBtn.Name = "ScrollRightBtn"
+scrollRightBtn.Name = "SpectNextBtn"
 scrollRightBtn.Size = UDim2.new(0, 24, 0, 24)
 scrollRightBtn.Position = UDim2.new(1, -34, 0.5, -12)
 scrollRightBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 235)
@@ -209,14 +171,6 @@ scrollRightBtn.Parent = topBar
 local src = Instance.new("UICorner")
 src.CornerRadius = UDim.new(0, 8)
 src.Parent = scrollRightBtn
-
-scrollLeftBtn.MouseButton1Click:Connect(function()
-    scrollHorizontal(-1)
-end)
-
-scrollRightBtn.MouseButton1Click:Connect(function()
-    scrollHorizontal(1)
-end)
 
 ------------------------------------------------
 -- STATE & LOGIC
@@ -261,7 +215,7 @@ local function hardResetCameraToLocal()
     cam.AudioListener = Enum.CameraAudioListener.Camera
 end
 
--- STOP SPECTATE
+-- STOP SPECTATE:
 local function stopSpectate()
     disconnectRespawn()
     currentSpectateTarget = nil
@@ -463,7 +417,7 @@ local function buildRow(plr)
         rs.Color             = Color3.fromRGB(120, 160, 235)
     end
 
-    -- SCROLLING HORIZONTAL DI DALAM ROW
+    -- SCROLLING HORIZONTAL DI DALAM ROW (manual untuk tombol panjang)
     local hScroll = Instance.new("ScrollingFrame")
     hScroll.Name = "RowScroll"
     hScroll.Position = UDim2.new(0, 4, 0, 4)
@@ -517,13 +471,13 @@ local function buildRow(plr)
 
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
-    spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 24)
+    spectateBtn.Size = UDim2.new(0, btnW + 4, 0, 18)
     spectateBtn.Position = UDim2.new(0, baseX + btnW + spacing, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
     spectateBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
-    spectateBtn.Text = "Spectate"
+    spectateBtn.Text = "SPECT POV"
     spectateBtn.Parent = content
 
     local sc = Instance.new("UICorner")
@@ -565,9 +519,6 @@ local function buildRow(plr)
     content.Size = UDim2.new(0, lastRight, 1, 0)
     hScroll.CanvasSize = UDim2.new(0, lastRight, 0, 0)
 
-    -- Sync dengan posisi scroll global saat ini
-    hScroll.CanvasPosition = Vector2.new(currentRowScrollX, 0)
-
     espBtn.MouseButton1Click:Connect(function()
         local newState = not activeESP[plr]
         setESPOnTarget(plr, newState)
@@ -604,6 +555,81 @@ local function rebuildList()
     applySearchFilter()
 end
 
+------------------------------------------------
+-- SPECTATE SEQUENCE: < & > BERDASARKAN URUTAN LIST
+------------------------------------------------
+local function getSpectateList()
+    local arr = {}
+
+    for _, plr in ipairs(players:GetPlayers()) do
+        if plr ~= player then -- skip diri sendiri
+            local row = rows[plr]
+            if row and row.Visible ~= false then
+                table.insert(arr, plr)
+            end
+        end
+    end
+
+    -- urutan sama seperti Name (UIListLayout.SortOrder = Name)
+    table.sort(arr, function(a, b)
+        return string.lower(a.Name) < string.lower(b.Name)
+    end)
+
+    return arr
+end
+
+local function spectateStep(dir) -- dir: 1 = next, -1 = prev
+    local listPlrs = getSpectateList()
+    local n = #listPlrs
+    if n == 0 then
+        stopSpectate()
+        return
+    end
+
+    local idx
+
+    if currentSpectateTarget then
+        for i, plr in ipairs(listPlrs) do
+            if plr == currentSpectateTarget then
+                idx = i
+                break
+            end
+        end
+    end
+
+    if not idx then
+        -- belum spect siapa2: kalau next → mulai dari pertama, prev → dari terakhir
+        idx = (dir >= 0) and 1 or n
+    else
+        -- geser index circular
+        local newIdx = idx + dir
+        if newIdx < 1 then
+            newIdx = n
+        elseif newIdx > n then
+            newIdx = 1
+        end
+        idx = newIdx
+    end
+
+    local target = listPlrs[idx]
+    if target then
+        startCustomSpectate(target)
+    else
+        stopSpectate()
+    end
+end
+
+local function spectatePrev()
+    spectateStep(-1)
+end
+
+local function spectateNext()
+    spectateStep(1)
+end
+
+------------------------------------------------
+-- WIRING BUTTONS
+------------------------------------------------
 searchBox:GetPropertyChangedSignal("Text"):Connect(applySearchFilter)
 
 players.PlayerAdded:Connect(function(plr)
@@ -638,6 +664,15 @@ espAllBtn.MouseButton1Click:Connect(function()
             setESPOnTarget(plr, espAllOn)
         end
     end
+end)
+
+-- < & > jadi Spectate Previous / Next sesuai urutan list (skip diri sendiri)
+scrollLeftBtn.MouseButton1Click:Connect(function()
+    spectatePrev()
+end)
+
+scrollRightBtn.MouseButton1Click:Connect(function()
+    spectateNext()
 end)
 
 ------------------------------------------------
