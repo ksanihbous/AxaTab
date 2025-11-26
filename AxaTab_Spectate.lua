@@ -12,7 +12,9 @@ local players     = Players
 local runService  = RunService
 local camera      = Camera
 
+------------------------------------------------
 -- HEADER
+------------------------------------------------
 local header = Instance.new("TextLabel")
 header.Name = "Header"
 header.Size = UDim2.new(1, -10, 0, 22)
@@ -39,7 +41,9 @@ sub.TextWrapped = true
 sub.Text = "Pilih player, nyalakan ESP (dengan jarak meter), spectate kamera, atau teleport ke target."
 sub.Parent = frame
 
--- Search box
+------------------------------------------------
+-- SEARCH BOX
+------------------------------------------------
 local searchBox = Instance.new("TextBox")
 searchBox.Name = "SearchBox"
 searchBox.PlaceholderText = "Search player..."
@@ -58,7 +62,9 @@ local sbCorner = Instance.new("UICorner")
 sbCorner.CornerRadius = UDim.new(0, 8)
 sbCorner.Parent = searchBox
 
--- List player
+------------------------------------------------
+-- LIST PLAYER (SCROLLING BAWAH)
+------------------------------------------------
 local list = Instance.new("ScrollingFrame")
 list.Name = "PlayerList"
 list.Position = UDim2.new(0, 6, 0, 88)
@@ -66,6 +72,7 @@ list.Size = UDim2.new(1, -12, 1, -130)
 list.BackgroundTransparency = 1
 list.BorderSizePixel = 0
 list.ScrollBarThickness = 4
+list.ScrollingDirection = Enum.ScrollingDirection.Y
 list.CanvasSize = UDim2.new(0, 0, 0, 0)
 list.Parent = frame
 
@@ -79,7 +86,9 @@ layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     list.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 6)
 end)
 
--- Top bar (status + tombol)
+------------------------------------------------
+-- TOP BAR (STATUS + TOMBOL)
+------------------------------------------------
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.Size = UDim2.new(1, -12, 0, 28)
@@ -129,7 +138,9 @@ local espAllCorner = Instance.new("UICorner")
 espAllCorner.CornerRadius = UDim.new(0, 8)
 espAllCorner.Parent = espAllBtn
 
---===================== LOGIC =====================--
+------------------------------------------------
+-- STATE & LOGIC
+------------------------------------------------
 local currentSpectateTarget = nil
 local spectateLock          = false
 local activeESP             = {}
@@ -146,15 +157,37 @@ local function stopSpectate()
 
     local char = player.Character or player.CharacterAdded:Wait()
     local hum  = char:FindFirstChildOfClass("Humanoid")
-    if hum and workspace.CurrentCamera then
-        workspace.CurrentCamera.CameraSubject = hum
-        workspace.CurrentCamera.CameraType    = Enum.CameraType.Custom
+    local cam  = workspace.CurrentCamera
+
+    if hum and cam then
+        cam.CameraSubject = hum
+        cam.CameraType    = Enum.CameraType.Custom
+    elseif cam then
+        -- fallback: biar balik kontrol default
+        cam.CameraType = Enum.CameraType.Custom
+        cam.CameraSubject = nil
     end
 
     spectateLock = false
     setSpectateStatus("Idle")
 end
 
+------------------------------------------------
+-- REGISTER GLOBAL HOOK UNTUK CORE DOCK
+------------------------------------------------
+_G.AxaHub = _G.AxaHub or {}
+
+_G.AxaHub.StopSpectate = function()
+    stopSpectate()
+end
+
+_G.AxaHub_StopSpectate = stopSpectate
+_G.AxaSpectate_Stop    = stopSpectate
+_G.Axa_StopSpectate    = stopSpectate
+
+------------------------------------------------
+-- ESP LOGIC
+------------------------------------------------
 local function setESPOnTarget(plr, enabled)
     if not plr then return end
 
@@ -233,7 +266,9 @@ local function teleportToPlayer(target)
     end
 end
 
--- Filter & row
+------------------------------------------------
+-- FILTER & ROW
+------------------------------------------------
 local rows = {}
 
 local function matchesSearch(plr)
@@ -257,6 +292,7 @@ local function applySearchFilter()
 end
 
 local function buildRow(plr)
+    -- ROW LUAR (VERTICAL LIST)
     local row = Instance.new("Frame")
     row.Name = plr.Name
     row.Size = UDim2.new(1, 0, 0, 40)
@@ -279,9 +315,29 @@ local function buildRow(plr)
         rs.Color             = Color3.fromRGB(120, 160, 235)
     end
 
+    -- SCROLLINGFRAME HORIZONTAL DI DALAM ROW
+    local hScroll = Instance.new("ScrollingFrame")
+    hScroll.Name = "RowScroll"
+    hScroll.Position = UDim2.new(0, 4, 0, 4)
+    hScroll.Size = UDim2.new(1, -8, 1, -8)
+    hScroll.BackgroundTransparency = 1
+    hScroll.BorderSizePixel = 0
+    hScroll.ScrollBarThickness = 3
+    hScroll.ScrollingDirection = Enum.ScrollingDirection.X
+    hScroll.CanvasSize = UDim2.new(0, 360, 0, 0) -- lebar konten
+    hScroll.Parent = row
+
+    -- KONTEN SEBENARNYA (NAMA + TOMBOL) DI DALAM SCROLL HORIZONTAL
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.Size = UDim2.new(0, 360, 1, 0) -- lebar fixed, bisa diubah kalau mau
+    content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.Parent = hScroll
+
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Name = "Name"
-    nameLabel.Size = UDim2.new(0.38, -6, 1, 0)
+    nameLabel.Size = UDim2.new(0, 170, 1, 0)
     nameLabel.Position = UDim2.new(0, 6, 0, 0)
     nameLabel.BackgroundTransparency = 1
     nameLabel.Font = Enum.Font.GothamBold
@@ -289,18 +345,18 @@ local function buildRow(plr)
     nameLabel.TextXAlignment = Enum.TextXAlignment.Left
     nameLabel.TextColor3 = Color3.fromRGB(50, 50, 75)
     nameLabel.Text = string.format("%s (@%s)", plr.DisplayName or plr.Name, plr.Name)
-    nameLabel.Parent = row
+    nameLabel.Parent = content
 
     local espBtn = Instance.new("TextButton")
     espBtn.Name = "ESPBtn"
     espBtn.Size = UDim2.new(0, 52, 0, 24)
-    espBtn.Position = UDim2.new(0.40, 0, 0.5, -12)
+    espBtn.Position = UDim2.new(0, 190, 0.5, -12)
     espBtn.BackgroundColor3 = Color3.fromRGB(220, 220, 230)
     espBtn.Font = Enum.Font.GothamBold
     espBtn.TextSize = 12
     espBtn.TextColor3 = Color3.fromRGB(60, 60, 90)
     espBtn.Text = "ESP"
-    espBtn.Parent = row
+    espBtn.Parent = content
 
     local ec = Instance.new("UICorner")
     ec.CornerRadius = UDim.new(0, 8)
@@ -309,13 +365,13 @@ local function buildRow(plr)
     local spectateBtn = Instance.new("TextButton")
     spectateBtn.Name = "SpectateBtn"
     spectateBtn.Size = UDim2.new(0, 62, 0, 24)
-    spectateBtn.Position = UDim2.new(0.40, 56, 0.5, -12)
+    spectateBtn.Position = UDim2.new(0, 246, 0.5, -12)
     spectateBtn.BackgroundColor3 = Color3.fromRGB(200, 230, 255)
     spectateBtn.Font = Enum.Font.GothamBold
     spectateBtn.TextSize = 12
     spectateBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
     spectateBtn.Text = "Spectate"
-    spectateBtn.Parent = row
+    spectateBtn.Parent = content
 
     local sc = Instance.new("UICorner")
     sc.CornerRadius = UDim.new(0, 8)
@@ -324,17 +380,19 @@ local function buildRow(plr)
     local tpBtn = Instance.new("TextButton")
     tpBtn.Name = "TPBtn"
     tpBtn.Size = UDim2.new(0, 52, 0, 24)
-    tpBtn.Position = UDim2.new(0.40, 124, 0.5, -12)
+    tpBtn.Position = UDim2.new(0, 316, 0.5, -12)
     tpBtn.BackgroundColor3 = Color3.fromRGB(210, 240, 220)
     tpBtn.Font = Enum.Font.GothamBold
     tpBtn.TextSize = 12
     tpBtn.TextColor3 = Color3.fromRGB(40, 90, 60)
     tpBtn.Text = "TP"
-    tpBtn.Parent = row
+    tpBtn.Parent = content
 
     local tc = Instance.new("UICorner")
     tc.CornerRadius = UDim.new(0, 8)
     tc.Parent = tpBtn
+
+    hScroll.CanvasSize = UDim2.new(0, content.Size.X.Offset + 8, 0, 0)
 
     espBtn.MouseButton1Click:Connect(function()
         local newState = not activeESP[plr]
@@ -402,7 +460,9 @@ espAllBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Kamera + jarak
+------------------------------------------------
+-- KAMERA + JARAK
+------------------------------------------------
 runService.RenderStepped:Connect(function()
     if currentSpectateTarget and not spectateLock then
         local cam  = workspace.CurrentCamera
@@ -446,5 +506,8 @@ runService.RenderStepped:Connect(function()
     end
 end)
 
+------------------------------------------------
+-- INIT
+------------------------------------------------
 rebuildList()
 setSpectateStatus("Idle")
