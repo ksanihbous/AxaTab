@@ -1,37 +1,45 @@
 --==========================================================
 --  11AxaTab_Weather.lua
+--  TAB 11 - Weather (Lighting / Atmosphere Presets) by Axa
 --  Dipanggil via loadstring dari CORE AxaHub
---  Env yang tersedia (dari core):
+--  Env dari CORE:
 --    TAB_FRAME, TAB_ID
 --    Players, LocalPlayer, RunService, TweenService, HttpService,
 --    UserInputService, VirtualInputManager, ContextActionService,
 --    StarterGui, CoreGui, Camera, SetActiveTab, AXA_TWEEN (opsional)
 --==========================================================
 
---=== ENV & SERVICES ===--
 local frame        = TAB_FRAME
-local tweenService = TweenService or game:GetService("TweenService")
-local lighting     = game:GetService("Lighting")
-local Players      = game:GetService("Players")
-local LocalPlayer  = Players.LocalPlayer
+local player       = LocalPlayer
+local players      = Players
+local runService   = RunService
+local tweenService = TweenService
+local starterGui   = StarterGui
 
+local Lighting = game:GetService("Lighting")
+
+-- pakai env TweenService kalau ada, fallback kalau tidak
+local TweenService = tweenService or game:GetService("TweenService")
+
+--==========================================================
+--  PANTAU GRAPHICS QUALITY
+--==========================================================
 local okUGS, UserGameSettings = pcall(function()
 	return UserSettings():GetService("UserGameSettings")
 end)
 
--- Bersihkan isi tab
-frame:ClearAllChildren()
-
 --==========================================================
--- CONFIG & SAFE GUARD
+--  CONFIG & GUARD
 --==========================================================
 local TWEEN_TIME = 0.9
-local EASING     = Enum.EasingStyle.Quad
-local EASEDIR    = Enum.EasingDirection.Out
+local EASING  = Enum.EasingStyle.Quad
+local EASEDIR = Enum.EasingDirection.Out
 
+-- Batas aman global
 local SAFE = {
 	MinBrightness = 1.0,
-	ExpMin = -0.08, ExpMax = 0.15,
+	ExpMin = -0.08,
+	ExpMax = 0.15,
 	MinAmbient = 22,
 	MinFogGap = 150,
 	MaxDOFFar = 0.10,
@@ -44,33 +52,35 @@ local SAFE = {
 }
 
 --==========================================================
--- EFFECT HELPERS
+--  HELPERS LIGHTING
 --==========================================================
 local function ensure(name, className, parent)
-	local obj = (parent or lighting):FindFirstChild(name)
+	parent = parent or Lighting
+	local obj = parent:FindFirstChild(name)
 	if not obj then
 		obj = Instance.new(className)
 		obj.Name = name
-		obj.Parent = parent or lighting
+		obj.Parent = parent
 	end
 	return obj
 end
 
 local Effects = {
-	Atmosphere      = ensure("_AxaWeather_Atmosphere","Atmosphere"),
-	ColorCorrection = ensure("_AxaWeather_Color","ColorCorrectionEffect"),
-	Bloom           = ensure("_AxaWeather_Bloom","BloomEffect"),
-	DOF             = ensure("_AxaWeather_DOF","DepthOfFieldEffect"),
-	SunRays         = ensure("_AxaWeather_SunRays","SunRaysEffect"),
-	Sky             = ensure("_AxaWeather_Sky","Sky"),
+	Atmosphere      = ensure("_RTX_Atmosphere","Atmosphere"),
+	ColorCorrection = ensure("_RTX_Color","ColorCorrectionEffect"),
+	Bloom           = ensure("_RTX_Bloom","BloomEffect"),
+	DOF             = ensure("_RTX_DOF","DepthOfFieldEffect"),
+	SunRays         = ensure("_RTX_SunRays","SunRaysEffect"),
+	Sky             = ensure("_RTX_Sky","Sky"),
 }
 
+-- Pastikan efek aktif
 Effects.Bloom.Enabled           = true
 Effects.DOF.Enabled             = true
 Effects.SunRays.Enabled         = true
 Effects.ColorCorrection.Enabled = true
 
--- Kosongkan skybox default (biar map bebas atur sendiri kalau mau)
+-- Kosongkan skybox (biar map aslinya bisa override kalau mau)
 Effects.Sky.SkyboxBk = ""
 Effects.Sky.SkyboxDn = ""
 Effects.Sky.SkyboxFt = ""
@@ -82,15 +92,18 @@ Effects.Sky.SkyboxUp = ""
 local function cloneProps(instance, props)
 	local t = {}
 	for _, p in ipairs(props) do
-		local ok, val = pcall(function() return instance[p] end)
-		if ok then t[p] = val end
+		local ok, val = pcall(function()
+			return instance[p]
+		end)
+		if ok then
+			t[p] = val
+		end
 	end
 	return t
 end
 
--- Snapshot awal Lighting & efek (buat tombol Reset)
 local initialSnapshot = {
-	Lighting   = cloneProps(lighting, {
+	Lighting   = cloneProps(Lighting, {
 		"ClockTime","Brightness","Ambient","EnvironmentDiffuseScale",
 		"EnvironmentSpecularScale","GlobalShadows","ExposureCompensation",
 		"FogEnd","FogStart","FogColor","Technology"
@@ -102,13 +115,16 @@ local initialSnapshot = {
 	SunRays    = cloneProps(Effects.SunRays,{"Intensity","Spread"}),
 }
 
--- Build tween goal aman (cek property exist)
 local function buildTweenableGoal(instance, goal)
 	local t = {}
 	for k, v in pairs(goal) do
 		if v ~= nil and k ~= "Technology" then
-			local ok = pcall(function() return instance[k] end)
-			if ok then t[k] = v end
+			local ok = pcall(function()
+				return instance[k]
+			end)
+			if ok then
+				t[k] = v
+			end
 		end
 	end
 	return t
@@ -116,9 +132,11 @@ end
 
 local function tweenProps(instance, goal, customTime)
 	local g = buildTweenableGoal(instance, goal)
-	if next(g) == nil then return end
+	if next(g) == nil then
+		return
+	end
 	local info = TweenInfo.new(customTime or TWEEN_TIME, EASING, EASEDIR)
-	tweenService:Create(instance, info, g):Play()
+	TweenService:Create(instance, info, g):Play()
 end
 
 -- Ambience helper
@@ -131,17 +149,27 @@ end
 
 -- Baca level kualitas
 local function getQualityLevelNumber()
-	if not okUGS or not UserGameSettings then return nil end
+	if not okUGS or not UserGameSettings then
+		return nil
+	end
 	local props = {"QualityLevel","SavedQualityLevel"}
 	for _,key in ipairs(props) do
-		local ok, val = pcall(function() return UserGameSettings[key] end)
-		if ok and val ~= nil then
+		local ok2, val = pcall(function()
+			return UserGameSettings[key]
+		end)
+		if ok2 and val ~= nil then
 			if typeof(val) == "EnumItem" then
-				if val.Name == "Automatic" then return 8 end
+				if val.Name == "Automatic" then
+					return 8
+				end
 				local n = tonumber((tostring(val) or ""):match("(%d+)"))
-				if n then return n end
+				if n then
+					return n
+				end
 			elseif typeof(val) == "number" then
-				if val > 0 then return val end
+				if val > 0 then
+					return val
+				end
 			end
 		end
 	end
@@ -151,85 +179,140 @@ end
 -- GUARD
 local function visualGuard(doTween)
 	local Lgoal = {}
-	if lighting.Brightness < SAFE.MinBrightness then Lgoal.Brightness = SAFE.MinBrightness end
-	if lighting.ExposureCompensation < SAFE.ExpMin or lighting.ExposureCompensation > SAFE.ExpMax then
-		Lgoal.ExposureCompensation = math.clamp(lighting.ExposureCompensation, SAFE.ExpMin, SAFE.ExpMax)
+
+	if Lighting.Brightness < SAFE.MinBrightness then
+		Lgoal.Brightness = SAFE.MinBrightness
 	end
-	local fs, fe = lighting.FogStart or 0, lighting.FogEnd or 1e9
-	if fe - fs < SAFE.MinFogGap then Lgoal.FogEnd = fs + SAFE.MinFogGap end
-	local t = lighting.ClockTime or 12
+
+	if Lighting.ExposureCompensation < SAFE.ExpMin or Lighting.ExposureCompensation > SAFE.ExpMax then
+		Lgoal.ExposureCompensation = math.clamp(Lighting.ExposureCompensation, SAFE.ExpMin, SAFE.ExpMax)
+	end
+
+	local fs, fe = Lighting.FogStart or 0, Lighting.FogEnd or 1e9
+	if fe - fs < SAFE.MinFogGap then
+		Lgoal.FogEnd = fs + SAFE.MinFogGap
+	end
+
+	local t = Lighting.ClockTime or 12
 	if t >= 19 or t <= 5 then
-		Lgoal.Ambient = liftAmbient(lighting.Ambient or Color3.new(), SAFE.MinAmbient)
+		Lgoal.Ambient = liftAmbient(Lighting.Ambient or Color3.new(), SAFE.MinAmbient)
 	end
+
 	if next(Lgoal) then
-		if doTween then tweenProps(lighting, Lgoal) else for k,v in pairs(Lgoal) do lighting[k]=v end end
+		if doTween then
+			tweenProps(Lighting, Lgoal)
+		else
+			for k,v in pairs(Lgoal) do
+				Lighting[k] = v
+			end
+		end
 	end
 
 	local Dgoal = {}
-	if Effects.DOF.FarIntensity and Effects.DOF.FarIntensity > SAFE.MaxDOFFar then Dgoal.FarIntensity = SAFE.MaxDOFFar end
-	if Effects.DOF.InFocusRadius and Effects.DOF.InFocusRadius < SAFE.MinInFocus then Dgoal.InFocusRadius = SAFE.MinInFocus end
+	if Effects.DOF.FarIntensity and Effects.DOF.FarIntensity > SAFE.MaxDOFFar then
+		Dgoal.FarIntensity = SAFE.MaxDOFFar
+	end
+	if Effects.DOF.InFocusRadius and Effects.DOF.InFocusRadius < SAFE.MinInFocus then
+		Dgoal.InFocusRadius = SAFE.MinInFocus
+	end
 
 	local q = getQualityLevelNumber() or 10
 	if q >= SAFE.CrispQuality then
-		if Effects.DOF.FarIntensity == nil or Effects.DOF.FarIntensity > SAFE.CrispFar then Dgoal.FarIntensity = SAFE.CrispFar end
-		if Effects.DOF.NearIntensity and Effects.DOF.NearIntensity > 0 then Dgoal.NearIntensity = 0 end
-		if Effects.DOF.InFocusRadius and Effects.DOF.InFocusRadius < SAFE.CrispInFocus then Dgoal.InFocusRadius = SAFE.CrispInFocus end
-		if Effects.DOF.FocusDistance and Effects.DOF.FocusDistance < SAFE.CrispFocus then Dgoal.FocusDistance = SAFE.CrispFocus end
+		if Effects.DOF.FarIntensity == nil or Effects.DOF.FarIntensity > SAFE.CrispFar then
+			Dgoal.FarIntensity = SAFE.CrispFar
+		end
+		if Effects.DOF.NearIntensity and Effects.DOF.NearIntensity > 0 then
+			Dgoal.NearIntensity = 0
+		end
+		if Effects.DOF.InFocusRadius and Effects.DOF.InFocusRadius < SAFE.CrispInFocus then
+			Dgoal.InFocusRadius = SAFE.CrispInFocus
+		end
+		if Effects.DOF.FocusDistance and Effects.DOF.FocusDistance < SAFE.CrispFocus then
+			Dgoal.FocusDistance = SAFE.CrispFocus
+		end
 	end
 
 	if next(Dgoal) then
-		if doTween then tweenProps(Effects.DOF, Dgoal) else for k,v in pairs(Dgoal) do Effects.DOF[k]=v end end
+		if doTween then
+			tweenProps(Effects.DOF, Dgoal)
+		else
+			for k,v in pairs(Dgoal) do
+				Effects.DOF[k] = v
+			end
+		end
 	end
 
 	if Effects.Bloom.Threshold and Effects.Bloom.Threshold < SAFE.BloomThreshMin then
-		if doTween then tweenProps(Effects.Bloom, {Threshold = SAFE.BloomThreshMin})
-		else Effects.Bloom.Threshold = SAFE.BloomThreshMin end
+		if doTween then
+			tweenProps(Effects.Bloom, {Threshold = SAFE.BloomThreshMin})
+		else
+			Effects.Bloom.Threshold = SAFE.BloomThreshMin
+		end
 	end
 
 	if Effects.ColorCorrection.Brightness and Effects.ColorCorrection.Brightness < -0.06 then
-		if doTween then tweenProps(Effects.ColorCorrection, {Brightness = -0.02})
-		else Effects.ColorCorrection.Brightness = -0.02 end
+		if doTween then
+			tweenProps(Effects.ColorCorrection, {Brightness = -0.02})
+		else
+			Effects.ColorCorrection.Brightness = -0.02
+		end
 	end
 end
 
--- APPLY PRESET + guard
+--==========================================================
+--  APPLY / RESET PRESET
+--==========================================================
 local currentPreset
 
 local function applyPreset(p, doTween)
-	if not p then return end
+	if not p then
+		return
+	end
 	currentPreset = p
+
 	if p.Lighting then
-		if p.Lighting.Technology ~= nil then pcall(function() lighting.Technology = p.Lighting.Technology end) end
-		if doTween ~= false then tweenProps(lighting, p.Lighting)
-		else for k,v in pairs(buildTweenableGoal(lighting, p.Lighting)) do lighting[k]=v end end
+		if p.Lighting.Technology ~= nil then
+			pcall(function()
+				Lighting.Technology = p.Lighting.Technology
+			end)
+		end
+
+		if doTween ~= false then
+			tweenProps(Lighting, p.Lighting)
+		else
+			for k,v in pairs(buildTweenableGoal(Lighting, p.Lighting)) do
+				Lighting[k] = v
+			end
+		end
 	end
-	if p.Atmosphere then
-		if doTween ~= false then tweenProps(Effects.Atmosphere, p.Atmosphere)
-		else for k,v in pairs(buildTweenableGoal(Effects.Atmosphere, p.Atmosphere)) do Effects.Atmosphere[k]=v end end
+
+	local function applyEffect(inst, goal)
+		if not goal then
+			return
+		end
+		if doTween ~= false then
+			tweenProps(inst, goal)
+		else
+			for k,v in pairs(buildTweenableGoal(inst, goal)) do
+				inst[k] = v
+			end
+		end
 	end
-	if p.Color then
-		if doTween ~= false then tweenProps(Effects.ColorCorrection, p.Color)
-		else for k,v in pairs(buildTweenableGoal(Effects.ColorCorrection, p.Color)) do Effects.ColorCorrection[k]=v end end
-	end
-	if p.Bloom then
-		if doTween ~= false then tweenProps(Effects.Bloom, p.Bloom)
-		else for k,v in pairs(buildTweenableGoal(Effects.Bloom, p.Bloom)) do Effects.Bloom[k]=v end end
-	end
-	if p.DOF then
-		if doTween ~= false then tweenProps(Effects.DOF, p.DOF)
-		else for k,v in pairs(buildTweenableGoal(Effects.DOF, p.DOF)) do Effects.DOF[k]=v end end
-	end
-	if p.SunRays then
-		if doTween ~= false then tweenProps(Effects.SunRays, p.SunRays)
-		else for k,v in pairs(buildTweenableGoal(Effects.SunRays, p.SunRays)) do Effects.SunRays[k]=v end end
-	end
+
+	applyEffect(Effects.Atmosphere,      p.Atmosphere)
+	applyEffect(Effects.ColorCorrection, p.Color)
+	applyEffect(Effects.Bloom,           p.Bloom)
+	applyEffect(Effects.DOF,             p.DOF)
+	applyEffect(Effects.SunRays,         p.SunRays)
+
 	visualGuard(true)
 end
 
--- RESET aman
 local function resetAll()
 	if initialSnapshot.Lighting and initialSnapshot.Lighting.Technology ~= nil then
-		pcall(function() lighting.Technology = initialSnapshot.Lighting.Technology end)
+		pcall(function()
+			Lighting.Technology = initialSnapshot.Lighting.Technology
+		end)
 	end
 	applyPreset({
 		Lighting   = initialSnapshot.Lighting,
@@ -243,7 +326,7 @@ local function resetAll()
 end
 
 --==========================================================
--- PRESETS LENGKAP (dari script Weather-mu)
+--  PRESETS (copied dari script Weather-mu)
 --==========================================================
 local PRESETS = {
 	["Clear Day"] = {
@@ -753,7 +836,7 @@ local PRESETS = {
 		SunRays={Intensity=0.02, Spread=0.76},
 		DOF={FocusDistance=23000, InFocusRadius=13000, NearIntensity=0, FarIntensity=0.02}
 	},
-	["Golden Hour"] = {
+	["Golden Hour+"] = {
 		Lighting={ClockTime=17.2, Brightness=2.2, ExposureCompensation=0.08},
 		Atmosphere={Density=0.32, Color=Color3.fromRGB(255,200,120), Decay=Color3.fromRGB(160,110,60), Glare=0.15, Haze=1.2},
 		Color={Brightness=0.02, Contrast=0.12, Saturation=0.15, TintColor=Color3.fromRGB(255,225,170)},
@@ -767,141 +850,267 @@ local PRESETS = {
 		Bloom={Intensity=0.20, Size=20, Threshold=0.93},
 		SunRays={Intensity=0.22, Spread=0.92},
 		DOF={FocusDistance=20000, InFocusRadius=10000, NearIntensity=0, FarIntensity=0.02}
-	}
+	},
 }
 
 --==========================================================
--- UI DI DALAM TAB (4 tombol per baris)
+--  UI TAB 11 - WEATHER (FOLLOW CORE UI)
 --==========================================================
-local Body = Instance.new("Frame")
-Body.Name = "AxaWeatherBody"
-Body.BackgroundTransparency = 1
-Body.Size = UDim2.fromScale(1,1)
-Body.Parent = frame
+
+-- bersihin isi TAB_FRAME, biar tab ini full kontrol
+for _, child in ipairs(frame:GetChildren()) do
+	child:Destroy()
+end
+
+frame.BackgroundTransparency = 1
+
+-- padding utama
+local root = Instance.new("Frame")
+root.Name = "WeatherRoot"
+root.Size = UDim2.fromScale(1, 1)
+root.BackgroundTransparency = 1
+root.Parent = frame
 
 local pad = Instance.new("UIPadding")
-pad.Parent = Body
-pad.PaddingTop    = UDim.new(0, 8)
-pad.PaddingBottom = UDim.new(0, 8)
+pad.PaddingTop    = UDim.new(0, 10)
 pad.PaddingLeft   = UDim.new(0, 12)
 pad.PaddingRight  = UDim.new(0, 12)
+pad.PaddingBottom = UDim.new(0, 10)
+pad.Parent = root
 
--- Bar atas: Title + HD + Reset
-local TopRow = Instance.new("Frame")
-TopRow.Name = "TopRow"
-TopRow.BackgroundTransparency = 1
-TopRow.Size = UDim2.new(1, 0, 0, 30)
-TopRow.Parent = Body
+-- Title
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, 0, 0, 24)
+title.Position = UDim2.fromOffset(0, 0)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = Color3.fromRGB(240, 240, 248)
+title.Text = "Weather • Lighting Presets"
+title.Parent = root
 
-local TopLayout = Instance.new("UIListLayout")
-TopLayout.FillDirection = Enum.FillDirection.Horizontal
-TopLayout.Padding = UDim.new(0, 6)
-TopLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-TopLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-TopLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TopLayout.Parent = TopRow
+-- Sub info
+local info = Instance.new("TextLabel")
+info.Name = "Info"
+info.BackgroundTransparency = 1
+info.Size = UDim2.new(1, 0, 0, 20)
+info.Position = UDim2.fromOffset(0, 24)
+info.Font = Enum.Font.Gotham
+info.TextSize = 13
+info.TextXAlignment = Enum.TextXAlignment.Left
+info.TextYAlignment = Enum.TextYAlignment.Top
+info.TextWrapped = true
+info.TextColor3 = Color3.fromRGB(170, 175, 190)
+info.Text = "Pilih preset cuaca / lighting. 4 tombol per baris (horizontal), selebihnya kebawah • Scroll bisa vertikal & horizontal."
+info.Parent = root
 
-local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Name = "Title"
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Size = UDim2.new(0, 180, 1, 0)
-TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.TextSize = 16
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.TextColor3 = Color3.fromRGB(230,230,240)
-TitleLabel.Text = "Weather Presets"
-TitleLabel.LayoutOrder = 1
-TitleLabel.Parent = TopRow
+-- Bar tombol atas (HD + Reset)
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.BackgroundTransparency = 1
+topBar.Size = UDim2.new(1, 0, 0, 30)
+topBar.Position = UDim2.fromOffset(0, 48)
+topBar.Parent = root
 
-local HdButton = Instance.new("TextButton")
-HdButton.Name = "HdButton"
-HdButton.Size = UDim2.new(0, 70, 1, 0)
-HdButton.BackgroundColor3 = Color3.fromRGB(55,55,65)
-HdButton.AutoButtonColor = true
-HdButton.Font = Enum.Font.GothamSemibold
-HdButton.TextSize = 13
-HdButton.TextColor3 = Color3.fromRGB(240,240,250)
-HdButton.Text = "HD"
-HdButton.LayoutOrder = 2
-HdButton.Parent = TopRow
-local HdCorner = Instance.new("UICorner", HdButton)
-HdCorner.CornerRadius = UDim.new(0, 8)
+local topLayout = Instance.new("UIListLayout")
+topLayout.FillDirection = Enum.FillDirection.Horizontal
+topLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+topLayout.Padding = UDim.new(0, 6)
+topLayout.SortOrder = Enum.SortOrder.LayoutOrder
+topLayout.Parent = topBar
 
-local ResetButton = Instance.new("TextButton")
-ResetButton.Name = "ResetButton"
-ResetButton.Size = UDim2.new(0, 80, 1, 0)
-ResetButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-ResetButton.AutoButtonColor = true
-ResetButton.Font = Enum.Font.GothamSemibold
-ResetButton.TextSize = 13
-ResetButton.TextColor3 = Color3.fromRGB(220, 220, 230)
-ResetButton.Text = "Reset"
-ResetButton.LayoutOrder = 3
-ResetButton.Parent = TopRow
-local ResetCorner = Instance.new("UICorner", ResetButton)
-ResetCorner.CornerRadius = UDim.new(0, 8)
+local function pillButton(text)
+	local b = Instance.new("TextButton")
+	b.AutoButtonColor = true
+	b.Size = UDim2.fromOffset(90, 26)
+	b.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
+	b.TextColor3 = Color3.fromRGB(235, 235, 245)
+	b.Font = Enum.Font.GothamSemibold
+	b.TextSize = 13
+	b.Text = text
 
--- Garis tipis
-local Divider = Instance.new("Frame")
-Divider.Name = "Divider"
-Divider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-Divider.BorderSizePixel = 0
-Divider.AnchorPoint = Vector2.new(0.5, 0)
-Divider.Position = UDim2.new(0.5, 0, 0, 34)
-Divider.Size = UDim2.new(1, -4, 0, 1)
-Divider.Parent = Body
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 8)
+	c.Parent = b
 
--- ScrollingFrame daftar preset (scroll vertikal)
-local ListFrame = Instance.new("ScrollingFrame")
-ListFrame.Name = "PresetList"
-ListFrame.BackgroundTransparency = 1
-ListFrame.BorderSizePixel = 0
-ListFrame.Position = UDim2.new(0, 0, 0, 40)
-ListFrame.Size = UDim2.new(1, 0, 1, -40)
-ListFrame.ScrollBarThickness = 6
-ListFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-ListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ListFrame.Parent = Body
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 1
+	stroke.Color = Color3.fromRGB(70, 80, 110)
+	stroke.Transparency = 0.3
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = b
 
-local ListPadding = Instance.new("UIPadding")
-ListPadding.Parent = ListFrame
-ListPadding.PaddingTop = UDim.new(0, 6)
-ListPadding.PaddingLeft = UDim.new(0, 2)
-ListPadding.PaddingRight = UDim.new(0, 2)
+	return b
+end
 
--- GRID 4 KOLOM: 4 tombol horizontal, lalu lanjut ke bawah
-local GridLayout = Instance.new("UIGridLayout")
-GridLayout.Parent = ListFrame
-GridLayout.SortOrder = Enum.SortOrder.LayoutOrder
-GridLayout.FillDirection = Enum.FillDirection.Horizontal
-GridLayout.FillDirectionMaxCells = 4
-GridLayout.CellPadding = UDim2.fromOffset(6, 6)
-GridLayout.CellSize = UDim2.new(0.25, -8, 0, 30)
+local ResetBtn = pillButton("Reset")
+ResetBtn.Name = "ResetBtn"
+ResetBtn.LayoutOrder = 2
+ResetBtn.Parent = topBar
+
+local HdBtn = pillButton("HD")
+HdBtn.Name = "HdBtn"
+HdBtn.LayoutOrder = 1
+HdBtn.Parent = topBar
+
+-- ScrollingFrame untuk grid preset
+local gridFrame = Instance.new("ScrollingFrame")
+gridFrame.Name = "PresetGrid"
+gridFrame.BackgroundTransparency = 1
+gridFrame.BorderSizePixel = 0
+gridFrame.ScrollBarThickness = 6
+gridFrame.ScrollingDirection = Enum.ScrollingDirection.XY -- bisa vertikal & horizontal
+gridFrame.AutomaticCanvasSize = Enum.AutomaticSize.XY
+gridFrame.Size = UDim2.new(1, 0, 1, - (48 + 30 + 10)) -- sisa tinggi setelah title+info+topbar
+gridFrame.Position = UDim2.fromOffset(0, 48 + 30 + 8)
+gridFrame.ClipsDescendants = true
+gridFrame.Parent = root
+
+local gridPad = Instance.new("UIPadding")
+gridPad.PaddingTop = UDim.new(0, 6)
+gridPad.PaddingLeft = UDim.new(0, 2)
+gridPad.Parent = gridFrame
+
+local gridLayout = Instance.new("UIGridLayout")
+gridLayout.CellPadding = UDim2.fromOffset(8, 8)
+gridLayout.CellSize = UDim2.fromOffset(200, 32) -- lumayan lebar, biar butuh scroll horizontal
+gridLayout.FillDirection = Enum.FillDirection.Horizontal
+gridLayout.FillDirectionMaxCells = 4 -- <= 4 tombol per baris
+gridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+gridLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+gridLayout.Parent = gridFrame
 
 --==========================================================
--- HD MODE (reuse logic dari script Weather lama)
+--  GRID BUILDER (SORT A-Z, 4 per baris)
+--==========================================================
+local function getSortedPresetNames()
+	local t = {}
+	for name in pairs(PRESETS) do
+		table.insert(t, name)
+	end
+	table.sort(t, function(a,b)
+		return string.lower(a) < string.lower(b)
+	end)
+	return t
+end
+
+local selectedButton
+
+local function styleButtonNormal(btn)
+	TweenService:Create(btn, TweenInfo.new(0.15), {
+		BackgroundColor3 = Color3.fromRGB(40, 42, 54),
+		TextColor3       = Color3.fromRGB(235, 235, 245)
+	}):Play()
+end
+
+local function styleButtonHover(btn)
+	TweenService:Create(btn, TweenInfo.new(0.12), {
+		BackgroundColor3 = Color3.fromRGB(55, 58, 72)
+	}):Play()
+end
+
+local function styleButtonSelected(btn)
+	TweenService:Create(btn, TweenInfo.new(0.15), {
+		BackgroundColor3 = Color3.fromRGB(90, 140, 255),
+		TextColor3       = Color3.fromRGB(15, 20, 35)
+	}):Play()
+end
+
+local function createPresetButton(name, order)
+	local preset = PRESETS[name]
+	if not preset then
+		return
+	end
+
+	local btn = Instance.new("TextButton")
+	btn.Name = "Preset_" .. (name:gsub("%W","_"))
+	btn.LayoutOrder = order or 0
+	btn.Size = UDim2.fromOffset(200, 32)
+	btn.BackgroundColor3 = Color3.fromRGB(40, 42, 54)
+	btn.TextColor3 = Color3.fromRGB(235, 235, 245)
+	btn.Font = Enum.Font.GothamSemibold
+	btn.TextSize = 13
+	btn.Text = name
+	btn.AutoButtonColor = false
+	btn.Parent = gridFrame
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = btn
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 1
+	stroke.Color = Color3.fromRGB(65, 70, 95)
+	stroke.Transparency = 0.3
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = btn
+
+	btn.MouseEnter:Connect(function()
+		if selectedButton ~= btn then
+			styleButtonHover(btn)
+		end
+	end)
+
+	btn.MouseLeave:Connect(function()
+		if selectedButton ~= btn then
+			styleButtonNormal(btn)
+		end
+	end)
+
+	btn.MouseButton1Click:Connect(function()
+		applyPreset(preset, true)
+		if selectedButton and selectedButton ~= btn then
+			styleButtonNormal(selectedButton)
+		end
+		selectedButton = btn
+		styleButtonSelected(btn)
+	end)
+
+	return btn
+end
+
+-- Bangun grid awal
+do
+	local names = getSortedPresetNames()
+	for i, name in ipairs(names) do
+		createPresetButton(name, i)
+	end
+end
+
+--==========================================================
+--  HD TOGGLE (SAMA LOGIKA DENGAN SCRIPT WEATHER)
 --==========================================================
 local isHD = false
 local hdSnapshot = nil
 
 local function styleHd(active)
-	tweenService:Create(HdButton, TweenInfo.new(0.15), {
-		BackgroundColor3 = active and Color3.fromRGB(90, 140, 255) or Color3.fromRGB(55,55,65),
-		TextColor3 = active and Color3.fromRGB(15, 20, 35) or Color3.fromRGB(240,240,250)
+	local bg = active and Color3.fromRGB(90, 140, 255) or Color3.fromRGB(40, 42, 54)
+	local fg = active and Color3.fromRGB(15, 20, 35)  or Color3.fromRGB(235, 235, 245)
+	TweenService:Create(HdBtn, TweenInfo.new(0.15), {
+		BackgroundColor3 = bg,
+		TextColor3       = fg,
 	}):Play()
-	HdButton.Text = active and "HD On" or "HD"
+	HdBtn.Text = active and "HD On" or "HD"
 end
 
 local function supportsFuture()
-	local ok = pcall(function() lighting.Technology = Enum.Technology.Future end)
-	return ok and lighting.Technology == Enum.Technology.Future
+	local ok = pcall(function()
+		Lighting.Technology = Enum.Technology.Future
+	end)
+	return ok and Lighting.Technology == Enum.Technology.Future
 end
 
 local function setHD(state)
 	if state and not isHD then
-		-- snapshot
+		-- snapshot dulu
 		hdSnapshot = {
-			Lighting = cloneProps(lighting, {"EnvironmentDiffuseScale","EnvironmentSpecularScale","ExposureCompensation","Technology","Ambient","Brightness"}),
+			Lighting = cloneProps(Lighting, {
+				"EnvironmentDiffuseScale","EnvironmentSpecularScale",
+				"ExposureCompensation","Technology","Ambient","Brightness"
+			}),
 			Color    = cloneProps(Effects.ColorCorrection,{"Brightness","Contrast","Saturation","TintColor"}),
 			Bloom    = cloneProps(Effects.Bloom,{"Intensity","Size","Threshold"}),
 			DOF      = cloneProps(Effects.DOF,{"FocusDistance","InFocusRadius","NearIntensity","FarIntensity"}),
@@ -910,52 +1119,57 @@ local function setHD(state)
 		}
 
 		if supportsFuture() then
-			tweenProps(lighting, {
-				EnvironmentDiffuseScale = math.min(1.2, (lighting.EnvironmentDiffuseScale or 1) * 1.12),
-				EnvironmentSpecularScale = math.min(1.2, (lighting.EnvironmentSpecularScale or 1) * 1.12),
-				ExposureCompensation = math.clamp((lighting.ExposureCompensation or 0) + 0.04, SAFE.ExpMin, SAFE.ExpMax),
+			tweenProps(Lighting, {
+				EnvironmentDiffuseScale = math.min(1.2, (Lighting.EnvironmentDiffuseScale or 1) * 1.12),
+				EnvironmentSpecularScale = math.min(1.2, (Lighting.EnvironmentSpecularScale or 1) * 1.12),
+				ExposureCompensation = math.clamp((Lighting.ExposureCompensation or 0) + 0.04, SAFE.ExpMin, SAFE.ExpMax),
 			})
 		end
 
 		tweenProps(Effects.ColorCorrection, {
-			Contrast = (Effects.ColorCorrection.Contrast or 0) + 0.14,
+			Contrast   = (Effects.ColorCorrection.Contrast   or 0) + 0.14,
 			Saturation = (Effects.ColorCorrection.Saturation or 0) + 0.10,
 			Brightness = math.clamp((Effects.ColorCorrection.Brightness or 0) + 0.01, -0.02, 0.12),
 		})
+
 		tweenProps(Effects.Bloom, {
 			Intensity = math.min(1, (Effects.Bloom.Intensity or 0.12) * 1.25),
-			Size = (Effects.Bloom.Size or 14) + 3,
+			Size      = (Effects.Bloom.Size or 14) + 3,
 			Threshold = math.max(SAFE.BloomThreshMin, (Effects.Bloom.Threshold or 0.97) - 0.03),
 		})
+
 		tweenProps(Effects.DOF, {
 			InFocusRadius = math.max(SAFE.MinInFocus, (Effects.DOF.InFocusRadius or 50) + 8),
-			FarIntensity = math.min(SAFE.MaxDOFFar, (Effects.DOF.FarIntensity or 0) + 0.02),
+			FarIntensity  = math.min(SAFE.MaxDOFFar,   (Effects.DOF.FarIntensity  or 0) + 0.02),
 		})
+
 		tweenProps(Effects.SunRays, {
 			Intensity = math.clamp((Effects.SunRays.Intensity or 0.02) + 0.02, 0, 1)
 		})
+
 		tweenProps(Effects.Atmosphere, {
 			Density = math.clamp((Effects.Atmosphere.Density or 0.25) + 0.04, 0, 1),
-			Haze = (Effects.Atmosphere.Haze or 1.0) + 0.15,
-			Glare = math.clamp((Effects.Atmosphere.Glare or 0.05) + 0.04, 0, 1),
+			Haze    = (Effects.Atmosphere.Haze or 1.0) + 0.15,
+			Glare   = math.clamp((Effects.Atmosphere.Glare or 0.05) + 0.04, 0, 1),
 		})
+
 		visualGuard(true)
 		isHD = true
 		styleHd(true)
-
 	elseif (not state) and isHD then
 		if hdSnapshot then
 			pcall(function()
 				if hdSnapshot.Lighting and hdSnapshot.Lighting.Technology ~= nil then
-					lighting.Technology = hdSnapshot.Lighting.Technology
+					Lighting.Technology = hdSnapshot.Lighting.Technology
 				end
 			end)
+
 			applyPreset({
-				Lighting = hdSnapshot.Lighting,
-				Color = hdSnapshot.Color,
-				Bloom = hdSnapshot.Bloom,
-				DOF = hdSnapshot.DOF,
-				SunRays = hdSnapshot.SunRays,
+				Lighting   = hdSnapshot.Lighting,
+				Color      = hdSnapshot.Color,
+				Bloom      = hdSnapshot.Bloom,
+				DOF        = hdSnapshot.DOF,
+				SunRays    = hdSnapshot.SunRays,
 				Atmosphere = hdSnapshot.Atmos,
 			}, true)
 		end
@@ -964,74 +1178,22 @@ local function setHD(state)
 	end
 end
 
-styleHd(false)
-
-HdButton.MouseButton1Click:Connect(function()
+HdBtn.MouseButton1Click:Connect(function()
 	setHD(not isHD)
 end)
 
-ResetButton.MouseButton1Click:Connect(function()
-	if isHD then setHD(false) end
+ResetBtn.MouseButton1Click:Connect(function()
+	if isHD then
+		setHD(false)
+	end
 	resetAll()
 end)
 
---==========================================================
--- GENERATE TOMBOL PRESET (4 kolom)
---==========================================================
-local function createPresetButton(name, order)
-	local btn = Instance.new("TextButton")
-	btn.Name = "Preset_" .. name
-	btn.LayoutOrder = order or 0
-	btn.Size = UDim2.fromScale(1, 1)
-	btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-	btn.AutoButtonColor = false
-	btn.Font = Enum.Font.GothamSemibold
-	btn.TextSize = 12
-	btn.Text = name
-	btn.TextColor3 = Color3.fromRGB(230, 230, 240)
-	btn.Parent = ListFrame
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 8)
-	corner.Parent = btn
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Thickness = 1
-	stroke.Color = Color3.fromRGB(70, 75, 95)
-	stroke.Transparency = 0.2
-	stroke.Parent = btn
-
-	btn.MouseEnter:Connect(function()
-		tweenService:Create(btn, TweenInfo.new(0.12), {
-			BackgroundColor3 = Color3.fromRGB(55, 55, 70)
-		}):Play()
-	end)
-
-	btn.MouseLeave:Connect(function()
-		tweenService:Create(btn, TweenInfo.new(0.15), {
-			BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-		}):Play()
-	end)
-
-	btn.MouseButton1Click:Connect(function()
-		applyPreset(PRESETS[name], true)
-	end)
-end
-
-local presetNames = {}
-for name in pairs(PRESETS) do
-	table.insert(presetNames, name)
-end
-table.sort(presetNames, function(a, b)
-	return string.lower(a) < string.lower(b)
-end)
-
-for i, name in ipairs(presetNames) do
-	createPresetButton(name, i)
-end
+styleHd(false)
+visualGuard(false)
 
 --==========================================================
--- QUALITY LEVEL LISTENER (kalau kualitas diganti, guard ulang)
+--  REAPPLY SAAT QUALITY DIUBAH USER
 --==========================================================
 if okUGS and UserGameSettings then
 	local function onQualityChanged()
@@ -1041,17 +1203,11 @@ if okUGS and UserGameSettings then
 			visualGuard(true)
 		end
 	end
-	pcall(function() UserGameSettings:GetPropertyChangedSignal("QualityLevel"):Connect(onQualityChanged) end)
-	pcall(function() UserGameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(onQualityChanged) end)
+
+	pcall(function()
+		UserGameSettings:GetPropertyChangedSignal("QualityLevel"):Connect(onQualityChanged)
+	end)
+	pcall(function()
+		UserGameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(onQualityChanged)
+	end)
 end
-
--- panggil guard awal
-visualGuard(true)
-
---==========================================================
---  Selesai:
---  - Tab 11AxaTab_Weather pakai UI CORE (TAB_FRAME)
---  - Tombol preset 4 horizontal per baris, lanjut ke bawah (scroll vertikal)
---  - Semua preset Weather-mu yang banyak itu terdaftar
---  - Ada tombol HD & Reset yang pakai logic lama (safe & snapshot)
---==========================================================
