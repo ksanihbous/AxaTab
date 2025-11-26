@@ -38,7 +38,7 @@ sub.TextColor3 = Color3.fromRGB(90, 90, 120)
 sub.TextXAlignment = Enum.TextXAlignment.Left
 sub.TextYAlignment = Enum.TextYAlignment.Top
 sub.TextWrapped = true
-sub.Text = "Pilih player, nyalakan ESP (dengan jarak meter), spectate kamera, SPECT FREE, atau teleport ke target."
+sub.Text = "Pilih player, nyalakan ESP (dengan jarak meter), spectate kamera, spect free, atau teleport ke target."
 sub.Parent = frame
 
 ------------------------------------------------
@@ -148,7 +148,7 @@ local STUDS_TO_METERS       = 1
 
 -- mode:
 -- "none"    : tidak spect
--- "custom"  : kamera chase (scriptable di belakang target)
+-- "custom"  : camera scriptable di belakang target (mode lama)
 -- "free"    : CameraSubject = Humanoid (bebas putar kamera)
 local spectateMode          = "none"
 local respawnConn           = nil
@@ -164,8 +164,12 @@ local function disconnectRespawn()
     end
 end
 
--- RESET TOTAL: hentikan spectate & balikin kamera ke LocalPlayer
+-- STOP SPECTATE FINAL:
+-- - Clear target & mode
+-- - Reset kamera ke LocalPlayer
+-- - Paksa status jadi Idle
 local function stopSpectate()
+    -- matikan mode spect
     disconnectRespawn()
     currentSpectateTarget = nil
     spectateMode          = "none"
@@ -175,14 +179,13 @@ local function stopSpectate()
         local char = player.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
 
+        cam.CameraType    = Enum.CameraType.Custom
+        cam.AudioListener = Enum.CameraAudioListener.Camera
         if hum then
             cam.CameraSubject = hum
         else
             cam.CameraSubject = nil
         end
-
-        cam.CameraType    = Enum.CameraType.Custom
-        cam.AudioListener = Enum.CameraAudioListener.Camera
     end
 
     setSpectateStatus("Idle")
@@ -192,7 +195,11 @@ end
 -- GLOBAL HOOK UNTUK CORE DOCK
 ------------------------------------------------
 _G.AxaHub = _G.AxaHub or {}
-_G.AxaHub.StopSpectate = stopSpectate
+
+_G.AxaHub.StopSpectate = function()
+    stopSpectate()
+end
+
 _G.AxaHub_StopSpectate = stopSpectate
 _G.AxaSpectate_Stop    = stopSpectate
 _G.Axa_StopSpectate    = stopSpectate
@@ -393,7 +400,7 @@ local function buildRow(plr)
 
     local content = Instance.new("Frame")
     content.Name = "Content"
-    content.Size = UDim2.new(0, 420, 1, 0) -- disesuaikan setelah tombol dibuat
+    content.Size = UDim2.new(0, 420, 1, 0) -- sementara, di-set ulang setelah tombol dibuat
     content.BackgroundTransparency = 1
     content.BorderSizePixel = 0
     content.Parent = hScroll
@@ -536,7 +543,9 @@ players.PlayerRemoving:Connect(function(plr)
     end
 end)
 
-stopBtn.MouseButton1Click:Connect(stopSpectate)
+stopBtn.MouseButton1Click:Connect(function()
+    stopSpectate()
+end)
 
 espAllBtn.MouseButton1Click:Connect(function()
     espAllOn = not espAllOn
@@ -554,7 +563,14 @@ end)
 -- KAMERA + JARAK
 ------------------------------------------------
 runService.RenderStepped:Connect(function()
-    if currentSpectateTarget then
+    -- SAFETY: Kalau nggak lagi spect apa-apa, pastikan status balik Idle
+    if not currentSpectateTarget or spectateMode == "none" then
+        if statusLabel.Text ~= "Status: Idle" then
+            setSpectateStatus("Idle")
+        end
+    end
+
+    if currentSpectateTarget and spectateMode ~= "none" then
         local cam  = workspace.CurrentCamera
         local char = currentSpectateTarget.Character
 
@@ -563,13 +579,13 @@ runService.RenderStepped:Connect(function()
 
             if hrp then
                 if spectateMode == "custom" then
-                    -- kamera scriptable di belakang target
+                    -- mode lama: kamera scriptable di belakang target
                     cam.CameraType = Enum.CameraType.Scriptable
                     local offset   = hrp.CFrame.LookVector * -8 + Vector3.new(0, 4, 0)
                     cam.CFrame     = CFrame.new(hrp.Position + offset, hrp.Position)
                     cam.AudioListener = Enum.CameraAudioListener.Camera
                 elseif spectateMode == "free" then
-                    -- biarin CameraSubject handle, cuma jaga type & listener
+                    -- mode baru: biarin CameraSubject handle, cukup pastikan type-nya Custom
                     local hum = char:FindFirstChildOfClass("Humanoid")
                     if hum then
                         cam.CameraType    = Enum.CameraType.Custom
