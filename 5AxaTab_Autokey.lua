@@ -102,11 +102,11 @@ akKeyLabel.TextXAlignment = Enum.TextXAlignment.Left
 akKeyLabel.Text = "Key saat ini: (diset di script)"
 akKeyLabel.Parent = autokeyTabFrame
 
--- LIST: diganti jadi ScrollingFrame biar nggak keluar area TAB
+-- LIST: ScrollingFrame
 local akList = Instance.new("ScrollingFrame")
 akList.Name = "MenuList"
 akList.Position = UDim2.new(0, 5, 0, 84)
-akList.Size = UDim2.new(1, -10, 1, -92) -- tetap sama, tapi sekarang bisa scroll
+akList.Size = UDim2.new(1, -10, 1, -92)
 akList.BackgroundTransparency = 1
 akList.BorderSizePixel = 0
 akList.ScrollBarThickness = 4
@@ -120,7 +120,6 @@ akLayout.SortOrder = Enum.SortOrder.LayoutOrder
 akLayout.Padding = UDim.new(0, 4)
 akLayout.Parent = akList
 
--- Auto sesuaikan CanvasSize agar scrollbar muncul kalau kepanjangan
 akLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     local size = akLayout.AbsoluteContentSize
     akList.CanvasSize = UDim2.new(0, 0, 0, size.Y + 4)
@@ -129,10 +128,8 @@ end)
 --------------------------------------------------
 --  CONFIG: KEY + ENTRIES SCRIPT
 --------------------------------------------------
--- EDIT KEY DI SINI (satu key untuk semua script ENTRIES)
 local KEY_STRING = "b5a60c22-68f1-4ee9-8e73-16f66179bf36"
 
--- Tambah script lain tinggal push ke tabel ini
 local ENTRIES = {
     {
         label  = "INDO HANGOUT",
@@ -188,7 +185,7 @@ else
 end
 
 --------------------------------------------------
---  UTIL: ROOT GUI PENCARIAN ModernKeyUI
+--  UTIL: ROOT GUI PENCARIAN ModernKeyUI / Spades UI
 --------------------------------------------------
 local function getRoots()
     local roots = {}
@@ -200,7 +197,6 @@ local function getRoots()
         table.insert(roots, CoreGui)
     end
 
-    -- Executor UI (kalau ada)
     pcall(function()
         if gethui then
             local r = gethui()
@@ -225,7 +221,6 @@ local function fireSignalStrong(signal)
     if not signal then return false end
     local anyFired = false
 
-    -- 1) Coba firesignal langsung (kalau didukung executor)
     if typeof(firesignal) == "function" then
         local ok = pcall(function()
             firesignal(signal)
@@ -235,7 +230,6 @@ local function fireSignalStrong(signal)
         end
     end
 
-    -- 2) Coba getconnections
     local getCons
     if typeof(getconnections) == "function" then
         getCons = getconnections
@@ -268,30 +262,28 @@ local function fireSignalStrong(signal)
 end
 
 --------------------------------------------------
---  UTIL: klik submit dengan VirtualInputManager
+--  UTIL: klik GUI (submit / tombol lain) via firesignal + cursor
 --------------------------------------------------
-local function clickSubmitWithCursor(submitButton)
-    if not submitButton then return end
+local function clickSubmitWithCursor(btn)
+    if not btn then return end
 
-    -- 1) Coba firing semua event dulu
     local hit =
-        fireSignalStrong(submitButton.MouseButton1Click)
-        or fireSignalStrong(submitButton.MouseButton1Down)
-        or fireSignalStrong(submitButton.MouseButton1Up)
-        or fireSignalStrong(submitButton.Activated)
+        fireSignalStrong(btn.MouseButton1Click)
+        or fireSignalStrong(btn.MouseButton1Down)
+        or fireSignalStrong(btn.MouseButton1Up)
+        or fireSignalStrong(btn.Activated)
 
     if hit then
         return
     end
 
-    -- 2) Fallback: gerakkin cursor + klik kiri pakai VirtualInputManager
     if not VirtualInputManager or not UserInputService then
-        warn("[Axa Autokey] VirtualInputManager / UserInputService tidak tersedia, tidak bisa klik pakai cursor.")
+        warn("[Axa Autokey] VirtualInputManager/UserInputService tidak tersedia.")
         return
     end
 
-    local buttonPos  = submitButton.AbsolutePosition
-    local buttonSize = submitButton.AbsoluteSize
+    local buttonPos  = btn.AbsolutePosition
+    local buttonSize = btn.AbsoluteSize
     local targetX    = buttonPos.X + buttonSize.X/2
     local targetY    = buttonPos.Y + buttonSize.Y/2
 
@@ -386,6 +378,151 @@ local function autoKeyAndSubmit()
 end
 
 --------------------------------------------------
+--  UTIL INDO HANGOUT: tekan key & cari UI Spades
+--------------------------------------------------
+local function pressKeyCode(keyCode)
+    if not VirtualInputManager then return end
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
+
+-- tunggu sampai UI yang punya label "Auto Fishing" muncul
+local function waitForSpadesUI(timeout)
+    timeout = timeout or 30
+    local t0 = tick()
+
+    while tick() - t0 < timeout do
+        for _, root in ipairs(getRoots()) do
+            for _, inst in ipairs(root:GetDescendants()) do
+                if inst:IsA("TextLabel") then
+                    local txt = string.lower(inst.Text or "")
+                    if string.find(txt, "auto fishing", 1, true) then
+                        local sg = inst:FindFirstAncestorOfClass("ScreenGui")
+                        if sg then
+                            return sg, inst
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+
+    return nil, nil
+end
+
+--------------------------------------------------
+--  POST CONFIG KHUSUS: INDO HANGOUT (VI of Spades)
+--  Step:
+--    1) Tekan angka 2
+--    2) Klik Auto Fishing
+--    3) Klik Auto Sell Under (header)
+--    4) Klik Disable
+--    5) Klik tombol minimize "-"
+--------------------------------------------------
+local function runPostConfig_IndoHangout()
+    local spadesGui, autoFishingLabel = waitForSpadesUI(35)
+    if not spadesGui then
+        warn("[Axa Autokey] Tidak menemukan UI Spades (Auto Fishing).")
+        return
+    end
+
+    -- helper lokal untuk cari TextLabel di dalam spadesGui
+    local function findLabel(keyword)
+        keyword = string.lower(keyword)
+        for _, inst in ipairs(spadesGui:GetDescendants()) do
+            if inst:IsA("TextLabel") then
+                local txt = string.lower(inst.Text or "")
+                if string.find(txt, keyword, 1, true) then
+                    return inst
+                end
+            end
+        end
+        return nil
+    end
+
+    local function findClickableAncestor(rootGui, inst)
+        local cur = inst
+        while cur and cur ~= rootGui do
+            if cur:IsA("TextButton") or cur:IsA("ImageButton") then
+                return cur
+            end
+            cur = cur.Parent
+        end
+        return nil
+    end
+
+    -- 1. Tekan angka 2 (slot rod)
+    pressKeyCode(Enum.KeyCode.Two)
+    task.wait(0.4)
+
+    -- 2. Klik Auto Fishing (checkbox di kanan)
+    do
+        local lbl = autoFishingLabel or findLabel("auto fishing")
+        if lbl then
+            local clickable
+            local parent = lbl.Parent
+
+            if parent then
+                -- cari button/checkbox di parent
+                for _, child in ipairs(parent:GetChildren()) do
+                    if child:IsA("TextButton") or child:IsA("ImageButton") then
+                        clickable = child
+                    end
+                end
+            end
+
+            if not clickable then
+                clickable = findClickableAncestor(spadesGui, lbl)
+            end
+
+            if clickable then
+                clickSubmitWithCursor(clickable)
+            end
+        end
+    end
+
+    task.wait(0.5)
+
+    -- 3. Klik header Auto Sell Under
+    local autoSellLabel = findLabel("auto sell under")
+    if autoSellLabel then
+        local clickable = findClickableAncestor(spadesGui, autoSellLabel) or autoSellLabel
+        clickSubmitWithCursor(clickable)
+    end
+
+    task.wait(0.6)
+
+    -- 4. Klik opsi "Disable"
+    local disableLabel = findLabel("disable")
+    if disableLabel then
+        local clickable = findClickableAncestor(spadesGui, disableLabel) or disableLabel
+        clickSubmitWithCursor(clickable)
+    end
+
+    task.wait(0.5)
+
+    -- 5. Klik tombol minimize "-" di kanan atas UI Spades
+    local minimizeBtn = nil
+    for _, inst in ipairs(spadesGui:GetDescendants()) do
+        if inst:IsA("TextButton") or inst:IsA("ImageButton") then
+            local txt = tostring(inst.Text or "")
+            if txt == "-" or txt == "–" or txt == "_" then
+                minimizeBtn = inst
+                break
+            end
+        end
+    end
+
+    if minimizeBtn then
+        clickSubmitWithCursor(minimizeBtn)
+    end
+end
+
+--------------------------------------------------
 --  LOAD SCRIPT PILIHAN + TRIGGER AUTOKEY
 --------------------------------------------------
 local function runEntry(entry, buttonInstance)
@@ -432,10 +569,19 @@ local function runEntry(entry, buttonInstance)
         return
     end
 
-    -- Setelah script jalan, tunggu sebentar lalu hunting ModernKeyUI
+    -- Setelah script jalan, baru Autokey + konfigurasi VI of Spades
     task.spawn(function()
-        task.wait(2) -- kalau mau diubah ke 10–15 detik tinggal ganti di sini
-        autoKeyAndSubmit()
+        task.wait(2)              -- tunggu Spade Key muncul
+        autoKeyAndSubmit()        -- isi key + klik Submit
+
+        if entry.label == "INDO HANGOUT" then
+            -- khusus ENTRIES[1]: jalankan rangkaian klik UI Auto Fishing / Auto Sell / Minimize
+            task.spawn(function()
+                task.wait(2)      -- jeda kecil setelah submit
+                runPostConfig_IndoHangout()
+            end)
+        end
+
         if buttonInstance and buttonInstance.Parent then
             buttonInstance.Text = entry.label or "Entry"
         end
@@ -467,10 +613,11 @@ for i, entry in ipairs(ENTRIES) do
     end)
 end
 
--- Expose dikit buat debugging manual kalau perlu
+-- Expose buat debugging
 _G.AxaAutokeyHG = {
-    KEY_STRING        = KEY_STRING,
-    ENTRIES           = ENTRIES,
-    AutoKeyAndSubmit  = autoKeyAndSubmit,
-    FindModernKeyUI   = findModernKeyUI,
+    KEY_STRING             = KEY_STRING,
+    ENTRIES                = ENTRIES,
+    AutoKeyAndSubmit       = autoKeyAndSubmit,
+    FindModernKeyUI        = findModernKeyUI,
+    RunPostConfig_IndoHangout = runPostConfig_IndoHangout,
 }
