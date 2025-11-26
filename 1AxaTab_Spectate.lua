@@ -165,24 +165,35 @@ local function disconnectRespawn()
     end
 end
 
+-- FIXED: stopSpectate tidak lagi pakai CharacterAdded:Wait() (tidak nge-freeze)
+-- dan SELALU mengembalikan spectateLock = false
 local function stopSpectate()
-    spectateLock          = true
+    if spectateLock then return end
+    spectateLock = true
+
     disconnectRespawn()
     currentSpectateTarget = nil
     spectateMode          = "none"
 
-    local char = player.Character or player.CharacterAdded:Wait()
-    local hum  = char:FindFirstChildOfClass("Humanoid")
-    local cam  = workspace.CurrentCamera
+    local ok, err = pcall(function()
+        local cam = workspace.CurrentCamera
+        if not cam then return end
 
-    if hum and cam then
-        cam.CameraSubject   = hum
+        local char = player.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+        if hum then
+            cam.CameraSubject   = hum
+        else
+            cam.CameraSubject   = nil
+        end
+
         cam.CameraType      = Enum.CameraType.Custom
         cam.AudioListener   = Enum.CameraAudioListener.Camera
-    elseif cam then
-        cam.CameraType    = Enum.CameraType.Custom
-        cam.CameraSubject = nil
-        cam.AudioListener = Enum.CameraAudioListener.Camera
+    end)
+
+    if not ok then
+        warn("[AxaTab_Spectate] stopSpectate error:", err)
     end
 
     spectateLock = false
@@ -208,6 +219,7 @@ _G.Axa_StopSpectate    = stopSpectate
 
 -- Mode lama: kamera scriptable di belakang target (chase cam)
 local function startCustomSpectate(plr)
+    if spectateLock then return end
     disconnectRespawn()
     currentSpectateTarget = plr
     spectateMode          = "custom"
@@ -221,6 +233,7 @@ end
 
 -- Mode baru: SPECT FREE (pakai CameraSubject, bebas putar kamera)
 local function startFreeSpectate(plr)
+    if spectateLock then return end
     disconnectRespawn()
     currentSpectateTarget = plr
     spectateMode          = "free"
@@ -498,12 +511,10 @@ local function buildRow(plr)
     end)
 
     spectateBtn.MouseButton1Click:Connect(function()
-        if spectateLock then return end
         startCustomSpectate(plr)
     end)
 
     spectFreeBtn.MouseButton1Click:Connect(function()
-        if spectateLock then return end
         startFreeSpectate(plr)
     end)
 
