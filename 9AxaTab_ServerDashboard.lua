@@ -275,12 +275,10 @@ end)
 
 --==========================================================
 -- CARD 2: TOMBOL UTILITAS SERVER (REJOIN, HOP, COPY ID)
---   -> BARIS TOMBOL DI DALAM SCROLLINGFRAME HORIZONTAL
 --==========================================================
 local actionCard = makeCard(90)
 makeSectionTitle(actionCard, "Utilitas Server")
 
--- ScrollingFrame horizontal untuk tombol-tombol
 local btnScroll = Instance.new("ScrollingFrame")
 btnScroll.Name = "ButtonScroll"
 btnScroll.Size = UDim2.new(1, -16, 0, 40)
@@ -621,6 +619,8 @@ end)
 
 local afkRows = {}
 
+-- ROW AFK: pakai SCROLLINGFRAME HORIZONTAL di dalam row
+-- supaya teks panjang (DisplayName + Active/AFK + Idle) bisa digeser ke samping.
 local function getOrCreateAfkRow(plr)
     local row = afkRows[plr]
     if row and row.Parent ~= afkScroll then
@@ -639,9 +639,30 @@ local function getOrCreateAfkRow(plr)
         c.CornerRadius = UDim.new(0, 6)
         c.Parent = row
 
+        -- ScrollingFrame horizontal di dalam row
+        local hScroll = Instance.new("ScrollingFrame")
+        hScroll.Name = "RowScroll"
+        hScroll.Position = UDim2.new(0, 4, 0, 4)
+        hScroll.Size = UDim2.new(1, -8, 1, -8)
+        hScroll.BackgroundTransparency = 1
+        hScroll.BorderSizePixel = 0
+        hScroll.ScrollBarThickness = 3
+        hScroll.ScrollingDirection = Enum.ScrollingDirection.X
+        hScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        hScroll.ScrollBarImageTransparency = 0.1
+        hScroll.Parent = row
+
+        local content = Instance.new("Frame")
+        content.Name = "Content"
+        content.Size = UDim2.new(0, 360, 1, 0) -- akan di-set ulang di bawah
+        content.BackgroundTransparency = 1
+        content.BorderSizePixel = 0
+        content.Parent = hScroll
+
+        -- DisplayName kiri, lebih lega
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Name = "Name"
-        nameLabel.Size = UDim2.new(0.45, -6, 1, 0)
+        nameLabel.Size = UDim2.new(0, 190, 1, 0)
         nameLabel.Position = UDim2.new(0, 6, 0, 0)
         nameLabel.BackgroundTransparency = 1
         nameLabel.Font = Enum.Font.GothamSemibold
@@ -649,31 +670,42 @@ local function getOrCreateAfkRow(plr)
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
         nameLabel.TextColor3 = Color3.fromRGB(55, 60, 90)
         nameLabel.Text = string.format("%s (@%s)", plr.DisplayName or plr.Name, plr.Name)
-        nameLabel.Parent = row
+        nameLabel.Parent = content
+
+        -- Status + Idle didekatkan di kanan
+        local baseX   = 200
+        local statusW = 60
+        local idleW   = 110
+        local gap     = 6
 
         local statusLabel = Instance.new("TextLabel")
         statusLabel.Name = "Status"
-        statusLabel.Size = UDim2.new(0.25, -6, 1, 0)
-        statusLabel.Position = UDim2.new(0.45, 0, 0, 0)
+        statusLabel.Size = UDim2.new(0, statusW, 1, 0)
+        statusLabel.Position = UDim2.new(0, baseX, 0, 0)
         statusLabel.BackgroundTransparency = 1
         statusLabel.Font = Enum.Font.GothamBold
         statusLabel.TextSize = 11
         statusLabel.TextXAlignment = Enum.TextXAlignment.Left
         statusLabel.TextColor3 = Color3.fromRGB(80, 120, 80)
         statusLabel.Text = "Active"
-        statusLabel.Parent = row
+        statusLabel.Parent = content
 
         local idleLabel = Instance.new("TextLabel")
         idleLabel.Name = "Idle"
-        idleLabel.Size = UDim2.new(0.3, -6, 1, 0)
-        idleLabel.Position = UDim2.new(0.75, 0, 0, 0)
+        idleLabel.Size = UDim2.new(0, idleW, 1, 0)
+        idleLabel.Position = UDim2.new(0, baseX + statusW + gap, 0, 0)
         idleLabel.BackgroundTransparency = 1
         idleLabel.Font = Enum.Font.Code
         idleLabel.TextSize = 11
-        idleLabel.TextXAlignment = Enum.TextXAlignment.Right
+        idleLabel.TextXAlignment = Enum.TextXAlignment.Left
         idleLabel.TextColor3 = Color3.fromRGB(100, 100, 130)
         idleLabel.Text = "Idle: 0s"
-        idleLabel.Parent = row
+        idleLabel.Parent = content
+
+        -- Hitung lebar konten akhir (untuk scroll X)
+        local lastRight = idleLabel.Position.X.Offset + idleLabel.Size.X.Offset + 8
+        content.Size = UDim2.new(0, lastRight, 1, 0)
+        hScroll.CanvasSize = UDim2.new(0, lastRight, 0, 0)
 
         afkRows[plr] = row
     end
@@ -722,7 +754,6 @@ local function updateAfkData()
         end
     end
 
-    -- bersihkan data player yang sudah leave
     for plr, _ in pairs(afkData) do
         if not plr.Parent then
             afkData[plr] = nil
@@ -757,9 +788,10 @@ local function refreshAfkList()
         local idleSec = info and info.idleTime or 0
         local isAfk   = info and info.isAfk or false
 
-        local nameLabel   = row:FindFirstChild("Name")
-        local statusLabel = row:FindFirstChild("Status")
-        local idleLabel   = row:FindFirstChild("Idle")
+        -- cari label di dalam row (recursive karena sekarang ada RowScroll/Content)
+        local nameLabel   = row:FindFirstChild("Name", true)
+        local statusLabel = row:FindFirstChild("Status", true)
+        local idleLabel   = row:FindFirstChild("Idle", true)
 
         if nameLabel and nameLabel:IsA("TextLabel") then
             nameLabel.Text = string.format("%s (@%s)", plr.DisplayName or plr.Name, plr.Name)
@@ -786,7 +818,6 @@ local function refreshAfkList()
         end
     end
 
-    -- sembunyikan row yang tidak lagi ada playernya
     for plr, row in pairs(afkRows) do
         if row and not seen[row] then
             row.Visible = false
