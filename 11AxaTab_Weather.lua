@@ -353,373 +353,532 @@ local function resetAll()
 	currentPreset = nil
 end
 
------------------ PRESETS (dipersingkat tapi banyak) -----------------
--- NOTE: Tidak ada property boolean di sini yang ditween (GlobalShadows nggak dipaksa).
+--==========================================================
+--  PRESETS (copied dari script Weather-mu)
+--==========================================================
 local PRESETS = {
 	["Clear Day"] = {
-		Lighting = {
-			ClockTime = 12,
-			Brightness = 3,
-			ExposureCompensation = 0,
-			EnvironmentDiffuseScale = 1,
-			EnvironmentSpecularScale = 1,
-		},
-		Atmosphere = {
-			Density = 0.25,
-			Offset  = 0,
-			Color   = Color3.fromRGB(199,220,255),
-			Decay   = Color3.fromRGB(104,124,155),
-			Glare   = 0,
-			Haze    = 1,
-		},
-		Color = {
-			Brightness = 0,
-			Contrast   = 0.05,
-			Saturation = 0.05,
-			TintColor  = Color3.fromRGB(255,255,255),
-		},
-		Bloom = {
-			Intensity = 0.1,
-			Size      = 12,
-			Threshold = 1.0,
-		},
-		DOF = {
-			FocusDistance = 200,
-			InFocusRadius = 50,
-			NearIntensity = 0,
-			FarIntensity  = 0,
-		},
-		SunRays = {
-			Intensity = 0.02,
-			Spread    = 0.8,
-		},
+		Lighting={ClockTime=12, Brightness=3, ExposureCompensation=0, GlobalShadows=true, EnvironmentDiffuseScale=1, EnvironmentSpecularScale=1},
+		Atmosphere={Density=0.25, Offset=0, Color=Color3.fromRGB(199,220,255), Decay=Color3.fromRGB(104,124,155), Glare=0, Haze=1},
+		Color={Brightness=0, Contrast=0.05, Saturation=0.05, TintColor=Color3.fromRGB(255,255,255)},
+		Bloom={Intensity=0.1, Size=12, Threshold=1.0},
+		DOF={FocusDistance=200, InFocusRadius=50, NearIntensity=0, FarIntensity=0},
+		SunRays={Intensity=0.02, Spread=0.8}
 	},
-
 	["Sunrise"] = {
-		Lighting = {
-			ClockTime = 6,
-			Brightness = 2.2,
-			ExposureCompensation = 0.1,
-		},
-		Atmosphere = {
-			Density = 0.35,
-			Color   = Color3.fromRGB(255,198,150),
-			Decay   = Color3.fromRGB(140,90,60),
-			Glare   = 0.2,
-			Haze    = 1.5,
-		},
-		Color = {
-			Brightness = 0.02,
-			Contrast   = 0.1,
-			Saturation = 0.1,
-			TintColor  = Color3.fromRGB(255,220,200),
-		},
-		Bloom = {
-			Intensity = 0.15,
-			Size      = 18,
-			Threshold = 0.95,
-		},
-		SunRays = {
-			Intensity = 0.08,
-			Spread    = 0.85,
-		},
+		Lighting={ClockTime=6, Brightness=2.2, ExposureCompensation=0.1},
+		Atmosphere={Density=0.35, Color=Color3.fromRGB(255,198,150), Decay=Color3.fromRGB(140,90,60), Glare=0.2, Haze=1.5},
+		Color={Brightness=0.02, Contrast=0.1, Saturation=0.1, TintColor=Color3.fromRGB(255,220,200)},
+		Bloom={Intensity=0.15, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.08, Spread=0.85}
 	},
-
 	["Sunset"] = {
-		Lighting = {
-			ClockTime = 18.4,
-			Brightness = 2.0,
-			ExposureCompensation = 0.05,
-		},
-		Atmosphere = {
-			Density = 0.38,
-			Color   = Color3.fromRGB(255,170,120),
-			Decay   = Color3.fromRGB(120,70,50),
-			Glare   = 0.25,
-			Haze    = 1.6,
-		},
-		Color = {
-			Brightness = 0,
-			Contrast   = 0.12,
-			Saturation = 0.12,
-			TintColor  = Color3.fromRGB(255,210,170),
-		},
-		Bloom = {
-			Intensity = 0.2,
-			Size      = 20,
-			Threshold = 0.95,
-		},
-		SunRays = {
-			Intensity = 0.1,
-			Spread    = 0.9,
-		},
+		Lighting={ClockTime=18.4, Brightness=2.0, ExposureCompensation=0.05},
+		Atmosphere={Density=0.38, Color=Color3.fromRGB(255,170,120), Decay=Color3.fromRGB(120,70,50), Glare=0.25, Haze=1.6},
+		Color={Brightness=0, Contrast=0.12, Saturation=0.12, TintColor=Color3.fromRGB(255,210,170)},
+		Bloom={Intensity=0.2, Size=20, Threshold=0.95},
+		SunRays={Intensity=0.1, Spread=0.9}
 	},
-
 	["Moonlight"] = {
-		Lighting = {
-			ClockTime = 2.2,
-			Brightness = 1.2,
-			ExposureCompensation = -0.05,
-		},
-		Atmosphere = {
-			Density = 0.3,
-			Color   = Color3.fromRGB(170,190,220),
-			Decay   = Color3.fromRGB(70,85,110),
-			Glare   = 0,
-			Haze    = 0.8,
-		},
-		Color = {
-			Brightness = -0.02,
-			Contrast   = 0.08,
-			Saturation = -0.05,
-			TintColor  = Color3.fromRGB(190,210,255),
-		},
-		Bloom = {
-			Intensity = 0.08,
-			Size      = 16,
-			Threshold = 0.9,
-		},
-		DOF = {
-			FocusDistance = 160,
-			InFocusRadius = 30,
-			NearIntensity = 0,
-			FarIntensity  = 0.05,
-		},
-		SunRays = {
-			Intensity = 0.02,
-			Spread    = 0.7,
-		},
+		Lighting={ClockTime=2.2, Brightness=1.2, ExposureCompensation=-0.05, GlobalShadows=true},
+		Atmosphere={Density=0.3, Color=Color3.fromRGB(170,190,220), Decay=Color3.fromRGB(70,85,110), Glare=0, Haze=0.8},
+		Color={Brightness=-0.02, Contrast=0.08, Saturation=-0.05, TintColor=Color3.fromRGB(190,210,255)},
+		Bloom={Intensity=0.08, Size=16, Threshold=0.9},
+		DOF={FocusDistance=160, InFocusRadius=30, NearIntensity=0, FarIntensity=0.05},
+		SunRays={Intensity=0.02, Spread=0.7}
 	},
-
 	["Storm"] = {
-		Lighting = {
-			ClockTime = 14,
-			Brightness = 1.1,
-			ExposureCompensation = -0.25,
-			FogStart = 0,
-			FogEnd   = 350,
-			FogColor = Color3.fromRGB(80,85,95),
-		},
-		Atmosphere = {
-			Density = 0.7,
-			Color   = Color3.fromRGB(130,145,160),
-			Decay   = Color3.fromRGB(60,65,70),
-			Glare   = 0.1,
-			Haze    = 2.2,
-		},
-		Color = {
-			Brightness = -0.08,
-			Contrast   = 0.15,
-			Saturation = -0.1,
-			TintColor  = Color3.fromRGB(210,220,230),
-		},
-		Bloom = {
-			Intensity = 0.05,
-			Size      = 10,
-			Threshold = 1.0,
-		},
-		SunRays = {
-			Intensity = 0,
-			Spread    = 1,
-		},
+		Lighting={ClockTime=14, Brightness=1.1, ExposureCompensation=-0.25, GlobalShadows=true, FogStart=0, FogEnd=350, FogColor=Color3.fromRGB(80,85,95)},
+		Atmosphere={Density=0.7, Color=Color3.fromRGB(130,145,160), Decay=Color3.fromRGB(60,65,70), Glare=0.1, Haze=2.2},
+		Color={Brightness=-0.08, Contrast=0.15, Saturation=-0.1, TintColor=Color3.fromRGB(210,220,230)},
+		Bloom={Intensity=0.05, Size=10, Threshold=1.0},
+		SunRays={Intensity=0, Spread=1}
 	},
-
 	["Ocean Blue"] = {
-		Lighting = {
-			ClockTime = 11.3,
-			Brightness = 2.6,
-			ExposureCompensation = 0.05,
-		},
-		Atmosphere = {
-			Density = 0.28,
-			Color   = Color3.fromRGB(150,200,255),
-			Decay   = Color3.fromRGB(60,120,180),
-			Glare   = 0.05,
-			Haze    = 1.0,
-		},
-		Color = {
-			Brightness = 0.02,
-			Contrast   = 0.06,
-			Saturation = 0.1,
-			TintColor  = Color3.fromRGB(200,230,255),
-		},
-		Bloom = {
-			Intensity = 0.12,
-			Size      = 14,
-			Threshold = 0.97,
-		},
-		SunRays = {
-			Intensity = 0.03,
-			Spread    = 0.85,
-		},
+		Lighting={ClockTime=11.3, Brightness=2.6, ExposureCompensation=0.05},
+		Atmosphere={Density=0.28, Color=Color3.fromRGB(150,200,255), Decay=Color3.fromRGB(60,120,180), Glare=0.05, Haze=1.0},
+		Color={Brightness=0.02, Contrast=0.06, Saturation=0.1, TintColor=Color3.fromRGB(200,230,255)},
+		Bloom={Intensity=0.12, Size=14, Threshold=0.97},
+		SunRays={Intensity=0.03, Spread=0.85}
 	},
-
 	["Overcast"] = {
-		Lighting = {
-			ClockTime = 13,
-			Brightness = 1.6,
-			ExposureCompensation = -0.05,
-		},
-		Atmosphere = {
-			Density = 0.55,
-			Color   = Color3.fromRGB(190,195,205),
-			Decay   = Color3.fromRGB(120,120,120),
-			Glare   = 0,
-			Haze    = 1.8,
-		},
-		Color = {
-			Brightness = -0.01,
-			Contrast   = 0.06,
-			Saturation = -0.05,
-			TintColor  = Color3.fromRGB(235,235,235),
-		},
+		Lighting={ClockTime=13, Brightness=1.6, ExposureCompensation=-0.05},
+		Atmosphere={Density=0.55, Color=Color3.fromRGB(190,195,205), Decay=Color3.fromRGB(120,120,120), Glare=0, Haze=1.8},
+		Color={Brightness=-0.01, Contrast=0.06, Saturation=-0.05, TintColor=Color3.fromRGB(235,235,235)}
 	},
-
 	["Golden Hour"] = {
-		Lighting = {
-			ClockTime = 17.2,
-			Brightness = 2.2,
-			ExposureCompensation = 0.08,
-		},
-		Atmosphere = {
-			Density = 0.32,
-			Color   = Color3.fromRGB(255,200,120),
-			Decay   = Color3.fromRGB(160,110,60),
-			Glare   = 0.15,
-			Haze    = 1.2,
-		},
-		Color = {
-			Brightness = 0.02,
-			Contrast   = 0.12,
-			Saturation = 0.15,
-			TintColor  = Color3.fromRGB(255,225,170),
-		},
-		SunRays = {
-			Intensity = 0.12,
-			Spread    = 0.88,
-		},
-		Bloom = {
-			Intensity = 0.18,
-			Size      = 20,
-			Threshold = 0.94,
-		},
+		Lighting={ClockTime=17.2, Brightness=2.2, ExposureCompensation=0.08},
+		Atmosphere={Density=0.32, Color=Color3.fromRGB(255,200,120), Decay=Color3.fromRGB(160,110,60), Glare=0.15, Haze=1.2},
+		Color={Brightness=0.02, Contrast=0.12, Saturation=0.15, TintColor=Color3.fromRGB(255,225,170)},
+		SunRays={Intensity=0.12, Spread=0.88},
+		Bloom={Intensity=0.18, Size=20, Threshold=0.94}
 	},
-
+	["Midnight Neon"] = {
+		Lighting={ClockTime=1.2, Brightness=1.0, ExposureCompensation=-0.1},
+		Atmosphere={Density=0.25, Color=Color3.fromRGB(180,200,255), Decay=Color3.fromRGB(70,90,140), Glare=0.05, Haze=0.9},
+		Color={Brightness=0.02, Contrast=0.12, Saturation=0.25, TintColor=Color3.fromRGB(190,255,245)},
+		Bloom={Intensity=0.28, Size=22, Threshold=0.86},
+		DOF={FocusDistance=120, InFocusRadius=20, NearIntensity=0, FarIntensity=0.06}
+	},
+	["Foggy"] = {
+		Lighting={ClockTime=9.5, Brightness=1.5, ExposureCompensation=-0.05, FogStart=0, FogEnd=180, FogColor=Color3.fromRGB(200,205,210)},
+		Atmosphere={Density=0.9, Color=Color3.fromRGB(210,215,220), Decay=Color3.fromRGB(180,185,190), Glare=0, Haze=3.0},
+		Color={Brightness=0, Contrast=-0.03, Saturation=-0.1, TintColor=Color3.fromRGB(230,235,240)}
+	},
+	["Sandstorm"] = {
+		Lighting={ClockTime=15, Brightness=1.4, ExposureCompensation=-0.15, FogStart=0, FogEnd=220, FogColor=Color3.fromRGB(210,180,120)},
+		Atmosphere={Density=0.85, Color=Color3.fromRGB(240,200,130), Decay=Color3.fromRGB(170,130,70), Glare=0.05, Haze=2.8},
+		Color={Brightness=-0.02, Contrast=0.08, Saturation=-0.05, TintColor=Color3.fromRGB(255,230,180)}
+	},
+	["Rainy Night"] = {
+		Lighting={ClockTime=23, Brightness=0.9, ExposureCompensation=-0.25, FogStart=0, FogEnd=300, FogColor=Color3.fromRGB(90,100,120)},
+		Atmosphere={Density=0.65, Color=Color3.fromRGB(150,170,200), Decay=Color3.fromRGB(80,90,110), Glare=0.05, Haze=2.0},
+		Color={Brightness=-0.05, Contrast=0.1, Saturation=-0.05, TintColor=Color3.fromRGB(220,230,240)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.92}
+	},
+	["Blizzard"] = {
+		Lighting={ClockTime=13, Brightness=2.0, ExposureCompensation=-0.1, FogStart=0, FogEnd=160, FogColor=Color3.fromRGB(230,235,240)},
+		Atmosphere={Density=1.0, Color=Color3.fromRGB(235,240,255), Decay=Color3.fromRGB(210,220,240), Glare=0, Haze=3.2},
+		Color={Brightness=0.02, Contrast=0.1, Saturation=-0.15, TintColor=Color3.fromRGB(240,245,255)}
+	},
 	["Aurora"] = {
-		Lighting = {
-			ClockTime = 0.8,
-			Brightness = 1.2,
-			ExposureCompensation = -0.05,
-		},
-		Atmosphere = {
-			Density = 0.35,
-			Color   = Color3.fromRGB(180,220,200),
-			Decay   = Color3.fromRGB(60,100,90),
-			Glare   = 0.1,
-			Haze    = 1.2,
-		},
-		Color = {
-			Brightness = 0.02,
-			Contrast   = 0.1,
-			Saturation = 0.2,
-			TintColor  = Color3.fromRGB(200,255,220),
-		},
-		Bloom = {
-			Intensity = 0.2,
-			Size      = 20,
-			Threshold = 0.9,
-		},
+		Lighting={ClockTime=0.8, Brightness=1.2, ExposureCompensation=-0.05},
+		Atmosphere={Density=0.35, Color=Color3.fromRGB(180,220,200), Decay=Color3.fromRGB(60,100,90), Glare=0.1, Haze=1.2},
+		Color={Brightness=0.02, Contrast=0.1, Saturation=0.2, TintColor=Color3.fromRGB(200,255,220)},
+		Bloom={Intensity=0.2, Size=20, Threshold=0.9}
 	},
-
+	["Godrays Forest"] = {
+		Lighting={ClockTime=15.5, Brightness=2.2, ExposureCompensation=0.05},
+		Atmosphere={Density=0.4, Color=Color3.fromRGB(220,235,210), Decay=Color3.fromRGB(120,140,110), Glare=0.2, Haze=1.6},
+		Color={Brightness=0.02, Contrast=0.08, Saturation=0.08, TintColor=Color3.fromRGB(235,245,230)},
+		SunRays={Intensity=0.2, Spread=0.92}
+	},
+	["Heatwave"] = {
+		Lighting={ClockTime=13.3, Brightness=2.8, ExposureCompensation=0.15},
+		Atmosphere={Density=0.22, Color=Color3.fromRGB(255,220,170), Decay=Color3.fromRGB(200,150,90), Glare=0.2, Haze=1.0},
+		Color={Brightness=0.03, Contrast=0.12, Saturation=0.06, TintColor=Color3.fromRGB(255,235,200)},
+		Bloom={Intensity=0.24, Size=22, Threshold=0.94}
+	},
+	["Cyberpunk Night"] = {
+		Lighting={ClockTime=0.2, Brightness=1.1, ExposureCompensation=-0.05},
+		Atmosphere={Density=0.3, Color=Color3.fromRGB(150,200,255), Decay=Color3.fromRGB(80,70,120), Glare=0.15, Haze=1.1},
+		Color={Brightness=0.03, Contrast=0.18, Saturation=0.35, TintColor=Color3.fromRGB(210,210,255)},
+		Bloom={Intensity=0.32, Size=24, Threshold=0.85}
+	},
+	["Tropical Noon"] = {
+		Lighting={ClockTime=12.5, Brightness=3.0, ExposureCompensation=0.08, GlobalShadows=true, EnvironmentDiffuseScale=1.1, EnvironmentSpecularScale=1.1},
+		Atmosphere={Density=0.22, Offset=0, Color=Color3.fromRGB(210,235,255), Decay=Color3.fromRGB(110,150,200), Glare=0.05, Haze=0.9},
+		Color={Brightness=0.01, Contrast=0.08, Saturation=0.12, TintColor=Color3.fromRGB(255,255,255)},
+		Bloom={Intensity=0.14, Size=16, Threshold=0.96},
+		SunRays={Intensity=0.07, Spread=0.86}
+	},
+	["Dawn Mist"] = {
+		Lighting={ClockTime=5.2, Brightness=1.8, ExposureCompensation=-0.02},
+		Atmosphere={Density=0.75, Color=Color3.fromRGB(235,225,215), Decay=Color3.fromRGB(200,190,180), Glare=0.0, Haze=2.6},
+		Color={Brightness=0, Contrast=-0.02, Saturation=-0.06, TintColor=Color3.fromRGB(245,235,230)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.98},
+		SunRays={Intensity=0.03, Spread=0.9}
+	},
+	["Dusk Violet"] = {
+		Lighting={ClockTime=18.9, Brightness=1.9, ExposureCompensation=0.02},
+		Atmosphere={Density=0.34, Color=Color3.fromRGB(220,180,255), Decay=Color3.fromRGB(120,90,150), Glare=0.12, Haze=1.4},
+		Color={Brightness=0.01, Contrast=0.14, Saturation=0.16, TintColor=Color3.fromRGB(240,210,255)},
+		Bloom={Intensity=0.18, Size=20, Threshold=0.93},
+		SunRays={Intensity=0.09, Spread=0.92}
+	},
+	["Monsoon Grey"] = {
+		Lighting={ClockTime=15.0, Brightness=1.3, ExposureCompensation=-0.18, FogStart=0, FogEnd=280, FogColor=Color3.fromRGB(120,130,140)},
+		Atmosphere={Density=0.8, Color=Color3.fromRGB(170,180,190), Decay=Color3.fromRGB(100,105,110), Glare=0.02, Haze=2.4},
+		Color={Brightness=-0.04, Contrast=0.1, Saturation=-0.08, TintColor=Color3.fromRGB(225,230,235)},
+		Bloom={Intensity=0.05, Size=12, Threshold=0.99},
+		SunRays={Intensity=0.0, Spread=1}
+	},
+	["High Noon Harsh"] = {
+		Lighting={ClockTime=12.0, Brightness=3.2, ExposureCompensation=0.12},
+		Atmosphere={Density=0.18, Color=Color3.fromRGB(235,245,255), Decay=Color3.fromRGB(130,150,170), Glare=0.02, Haze=0.7},
+		Color={Brightness=0, Contrast=0.06, Saturation=0.02, TintColor=Color3.fromRGB(255,255,255)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.99},
+		SunRays={Intensity=0.03, Spread=0.82}
+	},
+	["Winter Overcast"] = {
+		Lighting={ClockTime=13.0, Brightness=1.6, ExposureCompensation=-0.06},
+		Atmosphere={Density=0.58, Color=Color3.fromRGB(220,230,245), Decay=Color3.fromRGB(170,180,200), Glare=0, Haze=1.9},
+		Color={Brightness=0.0, Contrast=0.06, Saturation=-0.12, TintColor=Color3.fromRGB(235,240,255)},
+		Bloom={Intensity=0.05, Size=10, Threshold=0.98}
+	},
+	["Desert Evening"] = {
+		Lighting={ClockTime=17.8, Brightness=1.9, ExposureCompensation=0.02, FogStart=0, FogEnd=240, FogColor=Color3.fromRGB(230,190,130)},
+		Atmosphere={Density=0.62, Color=Color3.fromRGB(245,205,140), Decay=Color3.fromRGB(180,130,70), Glare=0.08, Haze=2.2},
+		Color={Brightness=0.01, Contrast=0.1, Saturation=0.08, TintColor=Color3.fromRGB(255,230,185)},
+		Bloom={Intensity=0.16, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.12, Spread=0.9}
+	},
 	["Alpine Morning"] = {
-		Lighting = {
-			ClockTime = 8.0,
-			Brightness = 2.1,
-			ExposureCompensation = 0.04,
-		},
-		Atmosphere = {
-			Density = 0.26,
-			Color   = Color3.fromRGB(205,230,255),
-			Decay   = Color3.fromRGB(140,170,200),
-			Glare   = 0.04,
-			Haze    = 0.95,
-		},
-		Color = {
-			Brightness = 0.01,
-			Contrast   = 0.08,
-			Saturation = 0.06,
-			TintColor  = Color3.fromRGB(235,245,255),
-		},
-		Bloom = {
-			Intensity = 0.12,
-			Size      = 14,
-			Threshold = 0.97,
-		},
-		SunRays = {
-			Intensity = 0.1,
-			Spread    = 0.88,
-		},
+		Lighting={ClockTime=8.0, Brightness=2.1, ExposureCompensation=0.04, GlobalShadows=true},
+		Atmosphere={Density=0.26, Color=Color3.fromRGB(205,230,255), Decay=Color3.fromRGB(140,170,200), Glare=0.04, Haze=0.95},
+		Color={Brightness=0.01, Contrast=0.08, Saturation=0.06, TintColor=Color3.fromRGB(235,245,255)},
+		Bloom={Intensity=0.12, Size=14, Threshold=0.97},
+		SunRays={Intensity=0.1, Spread=0.88}
 	},
-
+	["City Haze"] = {
+		Lighting={ClockTime=16.0, Brightness=1.7, ExposureCompensation=-0.04, FogStart=0, FogEnd=260, FogColor=Color3.fromRGB(160,170,180)},
+		Atmosphere={Density=0.7, Color=Color3.fromRGB(200,205,210), Decay=Color3.fromRGB(150,155,160), Glare=0.02, Haze=2.1},
+		Color={Brightness=-0.01, Contrast=0.08, Saturation=-0.04, TintColor=Color3.fromRGB(235,235,235)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.97}
+	},
+	["Marine Layer"] = {
+		Lighting={ClockTime=10.3, Brightness=1.8, ExposureCompensation=-0.02, FogStart=0, FogEnd=200, FogColor=Color3.fromRGB(210,220,230)},
+		Atmosphere={Density=0.88, Color=Color3.fromRGB(225,230,240), Decay=Color3.fromRGB(200,205,215), Glare=0.0, Haze=2.9},
+		Color={Brightness=0.0, Contrast=-0.02, Saturation=-0.08, TintColor=Color3.fromRGB(235,240,245)},
+		Bloom={Intensity=0.04, Size=10, Threshold=0.99}
+	},
+	["Polar Twilight"] = {
+		Lighting={ClockTime=22.4, Brightness=1.15, ExposureCompensation=-0.08, GlobalShadows=true},
+		Atmosphere={Density=0.36, Color=Color3.fromRGB(205,225,255), Decay=Color3.fromRGB(120,150,190), Glare=0.06, Haze=1.1},
+		Color={Brightness=0.0, Contrast=0.12, Saturation=-0.02, TintColor=Color3.fromRGB(220,235,255)},
+		Bloom={Intensity=0.12, Size=18, Threshold=0.92},
+		SunRays={Intensity=0.03, Spread=0.86}
+	},
+	["Meadow Spring"] = {
+		Lighting={ClockTime=9.8, Brightness=2.5, ExposureCompensation=0.06},
+		Atmosphere={Density=0.24, Color=Color3.fromRGB(225,245,230), Decay=Color3.fromRGB(140,185,150), Glare=0.04, Haze=0.9},
+		Color={Brightness=0.02, Contrast=0.08, Saturation=0.12, TintColor=Color3.fromRGB(240,255,240)},
+		Bloom={Intensity=0.14, Size=16, Threshold=0.96},
+		SunRays={Intensity=0.09, Spread=0.88}
+	},
+	["Overcast Drizzle"] = {
+		Lighting={ClockTime=14.2, Brightness=1.4, ExposureCompensation=-0.12, FogStart=0, FogEnd=300, FogColor=Color3.fromRGB(155,165,175)},
+		Atmosphere={Density=0.76, Color=Color3.fromRGB(190,200,210), Decay=Color3.fromRGB(130,135,145), Glare=0.0, Haze=2.3},
+		Color={Brightness=-0.02, Contrast=0.08, Saturation=-0.08, TintColor=Color3.fromRGB(230,235,240)},
+		Bloom={Intensity=0.04, Size=10, Threshold=0.99}
+	},
+	["Sunshower"] = {
+		Lighting={ClockTime=16.5, Brightness=2.0, ExposureCompensation=0.02, FogStart=0, FogEnd=360, FogColor=Color3.fromRGB(180,190,205)},
+		Atmosphere={Density=0.52, Color=Color3.fromRGB(205,215,230), Decay=Color3.fromRGB(130,140,155), Glare=0.02, Haze=1.6},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.06, TintColor=Color3.fromRGB(245,245,255)},
+		Bloom={Intensity=0.18, Size=20, Threshold=0.94},
+		SunRays={Intensity=0.16, Spread=0.94}
+	},
 	["Autumn Amber"] = {
-		Lighting = {
-			ClockTime = 16.9,
-			Brightness = 2.1,
-			ExposureCompensation = 0.04,
-		},
-		Atmosphere = {
-			Density = 0.33,
-			Color   = Color3.fromRGB(255,210,155),
-			Decay   = Color3.fromRGB(165,110,60),
-			Glare   = 0.1,
-			Haze    = 1.2,
-		},
-		Color = {
-			Brightness = 0.01,
-			Contrast   = 0.14,
-			Saturation = 0.1,
-			TintColor  = Color3.fromRGB(255,225,185),
-		},
-		Bloom = {
-			Intensity = 0.16,
-			Size      = 18,
-			Threshold = 0.95,
-		},
+		Lighting={ClockTime=16.9, Brightness=2.1, ExposureCompensation=0.04},
+		Atmosphere={Density=0.33, Color=Color3.fromRGB(255,210,155), Decay=Color3.fromRGB(165,110,60), Glare=0.1, Haze=1.2},
+		Color={Brightness=0.01, Contrast=0.14, Saturation=0.1, TintColor=Color3.fromRGB(255,225,185)},
+		Bloom={Intensity=0.16, Size=18, Threshold=0.95}
 	},
-
-	["Sunrays"] = {
-		Lighting = {
-			ClockTime = 15.5,
-			Brightness = 2.3,
-			ExposureCompensation = 0.06,
-		},
-		Atmosphere = {
-			Density = 0.3,
-			Color   = Color3.fromRGB(240,225,200),
-			Decay   = Color3.fromRGB(150,130,100),
-			Glare   = 0.2,
-			Haze    = 1.2,
-		},
-		Color = {
-			Brightness = 0.02,
-			Contrast   = 0.12,
-			Saturation = 0.08,
-			TintColor  = Color3.fromRGB(255,240,210),
-		},
-		SunRays = {
-			Intensity = 0.25,
-			Spread    = 0.92,
-		},
-		Bloom = {
-			Intensity = 0.2,
-			Size      = 20,
-			Threshold = 0.93,
-		},
+	["Midnight Overcast"] = {
+		Lighting={ClockTime=0.6, Brightness=1.0, ExposureCompensation=-0.14, FogStart=0, FogEnd=320, FogColor=Color3.fromRGB(95,105,120)},
+		Atmosphere={Density=0.68, Color=Color3.fromRGB(160,175,195), Decay=Color3.fromRGB(90,100,115), Glare=0, Haze=2.0},
+		Color={Brightness=-0.04, Contrast=0.1, Saturation=-0.06, TintColor=Color3.fromRGB(220,230,240)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.93}
 	},
-
-	-- (MASIH BANYAK – kamu bisa tambah preset lain di bawah ini
-	--  pakai pattern yang sama; yang penting tipe datanya bener:
-	--  angka / Color3, jangan boolean di-tween)
+	["Volcanic Ash"] = {
+		Lighting={ClockTime=15.6, Brightness=1.2, ExposureCompensation=-0.22, FogStart=0, FogEnd=220, FogColor=Color3.fromRGB(90,85,80)},
+		Atmosphere={Density=0.92, Color=Color3.fromRGB(120,110,105), Decay=Color3.fromRGB(80,70,65), Glare=0.0, Haze=3.2},
+		Color={Brightness=-0.06, Contrast=0.14, Saturation=-0.18, TintColor=Color3.fromRGB(210,200,190)},
+		Bloom={Intensity=0.02, Size=8, Threshold=1.0}
+	},
+	["Coastal Pink"] = {
+		Lighting={ClockTime=18.2, Brightness=2.0, ExposureCompensation=0.02},
+		Atmosphere={Density=0.28, Color=Color3.fromRGB(255,205,220), Decay=Color3.fromRGB(160,120,140), Glare=0.08, Haze=1.1},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.18, TintColor=Color3.fromRGB(255,220,230)},
+		Bloom={Intensity=0.2, Size=20, Threshold=0.92},
+		SunRays={Intensity=0.12, Spread=0.9}
+	},
+	["Arctic Blue Hour"] = {
+		Lighting={ClockTime=3.8, Brightness=1.3, ExposureCompensation=-0.02},
+		Atmosphere={Density=0.3, Color=Color3.fromRGB(200,220,255), Decay=Color3.fromRGB(110,140,190), Glare=0.06, Haze=1.0},
+		Color={Brightness=0.0, Contrast=0.1, Saturation=-0.04, TintColor=Color3.fromRGB(225,235,255)},
+		Bloom={Intensity=0.1, Size=16, Threshold=0.94}
+	},
+	["Savannah Dust"] = {
+		Lighting={ClockTime=16.1, Brightness=2.3, ExposureCompensation=0.0, FogStart=0, FogEnd=260, FogColor=Color3.fromRGB(215,190,140)},
+		Atmosphere={Density=0.64, Color=Color3.fromRGB(235,205,150), Decay=Color3.fromRGB(170,130,80), Glare=0.06, Haze=2.0},
+		Color={Brightness=0.0, Contrast=0.12, Saturation=0.04, TintColor=Color3.fromRGB(250,225,180)},
+		Bloom={Intensity=0.14, Size=18, Threshold=0.95}
+	},
+	["Cerulean Noon"] = {
+		Lighting={ClockTime=12.2, Brightness=2.8, ExposureCompensation=0.06, GlobalShadows=true},
+		Atmosphere={Density=0.24, Color=Color3.fromRGB(195,225,255), Decay=Color3.fromRGB(110,160,210), Glare=0.06, Haze=0.9},
+		Color={Brightness=0.01, Contrast=0.08, Saturation=0.10, TintColor=Color3.fromRGB(250,255,255)},
+		Bloom={Intensity=0.12, Size=16, Threshold=0.96},
+		SunRays={Intensity=0.08, Spread=0.86},
+		DOF={FocusDistance=20000, InFocusRadius=10000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Peachy Daybreak"] = {
+		Lighting={ClockTime=5.8, Brightness=2.1, ExposureCompensation=0.05},
+		Atmosphere={Density=0.34, Color=Color3.fromRGB(255,205,175), Decay=Color3.fromRGB(170,120,90), Glare=0.14, Haze=1.3},
+		Color={Brightness=0.02, Contrast=0.10, Saturation=0.12, TintColor=Color3.fromRGB(255,235,215)},
+		Bloom={Intensity=0.18, Size=20, Threshold=0.94},
+		SunRays={Intensity=0.12, Spread=0.9}
+	},
+	["Lavender Stormbreak"] = {
+		Lighting={ClockTime=17.9, Brightness=1.8, ExposureCompensation=0.02, FogStart=0, FogEnd=320, FogColor=Color3.fromRGB(180,165,195)},
+		Atmosphere={Density=0.62, Color=Color3.fromRGB(210,190,240), Decay=Color3.fromRGB(120,100,150), Glare=0.08, Haze=2.0},
+		Color={Brightness=0.0, Contrast=0.12, Saturation=0.02, TintColor=Color3.fromRGB(235,220,255)},
+		Bloom={Intensity=0.10, Size=16, Threshold=0.96}
+	},
+	["Emerald Coastline"] = {
+		Lighting={ClockTime=13.1, Brightness=2.6, ExposureCompensation=0.06},
+		Atmosphere={Density=0.26, Color=Color3.fromRGB(210,245,230), Decay=Color3.fromRGB(120,190,160), Glare=0.05, Haze=0.95},
+		Color={Brightness=0.01, Contrast=0.08, Saturation=0.10, TintColor=Color3.fromRGB(235,255,245)},
+		Bloom={Intensity=0.14, Size=16, Threshold=0.96},
+		SunRays={Intensity=0.09, Spread=0.88}
+	},
+	["Copper Horizon"] = {
+		Lighting={ClockTime=18.3, Brightness=2.0, ExposureCompensation=0.04},
+		Atmosphere={Density=0.33, Color=Color3.fromRGB(255,190,130), Decay=Color3.fromRGB(170,110,70), Glare=0.12, Haze=1.3},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.10, TintColor=Color3.fromRGB(255,220,170)},
+		Bloom={Intensity=0.18, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.13, Spread=0.9}
+	},
+	["Slate Drizzle"] = {
+		Lighting={ClockTime=15.2, Brightness=1.5, ExposureCompensation=-0.06, FogStart=0, FogEnd=300, FogColor=Color3.fromRGB(150,155,165)},
+		Atmosphere={Density=0.78, Color=Color3.fromRGB(185,190,200), Decay=Color3.fromRGB(120,125,135), Glare=0.0, Haze=2.4},
+		Color={Brightness=-0.01, Contrast=0.08, Saturation=-0.08, TintColor=Color3.fromRGB(230,235,240)},
+		Bloom={Intensity=0.05, Size=12, Threshold=0.99}
+	},
+	["Noctilucent Night"] = {
+		Lighting={ClockTime=1.0, Brightness=1.1, ExposureCompensation=-0.04, GlobalShadows=true},
+		Atmosphere={Density=0.28, Color=Color3.fromRGB(190,220,255), Decay=Color3.fromRGB(80,110,170), Glare=0.10, Haze=1.0},
+		Color={Brightness=0.0, Contrast=0.10, Saturation=0.06, TintColor=Color3.fromRGB(220,235,255)},
+		Bloom={Intensity=0.16, Size=20, Threshold=0.92},
+		SunRays={Intensity=0.02, Spread=0.75}
+	},
+	["Glacier Morning"] = {
+		Lighting={ClockTime=8.6, Brightness=2.2, ExposureCompensation=0.02},
+		Atmosphere={Density=0.27, Color=Color3.fromRGB(225,240,255), Decay=Color3.fromRGB(150,180,210), Glare=0.04, Haze=0.9},
+		Color={Brightness=0.01, Contrast=0.10, Saturation=-0.02, TintColor=Color3.fromRGB(235,245,255)},
+		Bloom={Intensity=0.10, Size=14, Threshold=0.97}
+	},
+	["Sunburst Rain"] = {
+		Lighting={ClockTime=16.2, Brightness=2.1, ExposureCompensation=0.03, FogStart=0, FogEnd=360, FogColor=Color3.fromRGB(185,195,210)},
+		Atmosphere={Density=0.55, Color=Color3.fromRGB(210,220,235), Decay=Color3.fromRGB(130,140,160), Glare=0.06, Haze=1.5},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.04, TintColor=Color3.fromRGB(245,250,255)},
+		Bloom={Intensity=0.20, Size=20, Threshold=0.94},
+		SunRays={Intensity=0.18, Spread=0.94}
+	},
+	["Monsoon Sunset Glow"] = {
+		Lighting={ClockTime=18.0, Brightness=1.8, ExposureCompensation=0.00, FogStart=0, FogEnd=300, FogColor=Color3.fromRGB(160,150,150)},
+		Atmosphere={Density=0.80, Color=Color3.fromRGB(240,190,140), Decay=Color3.fromRGB(150,110,80), Glare=0.10, Haze=2.3},
+		Color={Brightness=0.0, Contrast=0.10, Saturation=0.08, TintColor=Color3.fromRGB(255,215,180)},
+		Bloom={Intensity=0.12, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.10, Spread=0.9}
+	},
+	["Tropical Squall"] = {
+		Lighting={ClockTime=14.6, Brightness=1.7, ExposureCompensation=-0.04, FogStart=0, FogEnd=330, FogColor=Color3.fromRGB(145,160,170)},
+		Atmosphere={Density=0.72, Color=Color3.fromRGB(180,205,220), Decay=Color3.fromRGB(95,120,135), Glare=0.06, Haze=2.0},
+		Color={Brightness=-0.01, Contrast=0.10, Saturation=0.02, TintColor=Color3.fromRGB(225,235,240)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.98}
+	},
+	["Desert Mirage"] = {
+		Lighting={ClockTime=13.8, Brightness=2.6, ExposureCompensation=0.10},
+		Atmosphere={Density=0.30, Color=Color3.fromRGB(255,225,170), Decay=Color3.fromRGB(200,160,100), Glare=0.16, Haze=1.1},
+		Color={Brightness=0.02, Contrast=0.10, Saturation=0.04, TintColor=Color3.fromRGB(255,235,190)},
+		Bloom={Intensity=0.22, Size=22, Threshold=0.94}
+	},
+	["Urban Rain Night"] = {
+		Lighting={ClockTime=0.9, Brightness=1.0, ExposureCompensation=-0.06, FogStart=0, FogEnd=300, FogColor=Color3.fromRGB(95,105,120)},
+		Atmosphere={Density=0.70, Color=Color3.fromRGB(170,185,205), Decay=Color3.fromRGB(90,100,120), Glare=0.04, Haze=2.0},
+		Color={Brightness=0.0, Contrast=0.14, Saturation=0.12, TintColor=Color3.fromRGB(225,235,245)},
+		Bloom={Intensity=0.24, Size=22, Threshold=0.90}
+	},
+	["Starfield Clear"] = {
+		Lighting={ClockTime=23.8, Brightness=1.2, ExposureCompensation=-0.02, GlobalShadows=true},
+		Atmosphere={Density=0.22, Color=Color3.fromRGB(210,225,255), Decay=Color3.fromRGB(110,140,190), Glare=0.02, Haze=0.8},
+		Color={Brightness=0.0, Contrast=0.10, Saturation=-0.02, TintColor=Color3.fromRGB(225,235,255)},
+		Bloom={Intensity=0.08, Size=14, Threshold=0.95},
+		DOF={FocusDistance=20000, InFocusRadius=12000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Iridescent Dusk"] = {
+		Lighting={ClockTime=19.1, Brightness=1.9, ExposureCompensation=0.04},
+		Atmosphere={Density=0.32, Color=Color3.fromRGB(240,200,255), Decay=Color3.fromRGB(140,110,170), Glare=0.12, Haze=1.3},
+		Color={Brightness=0.01, Contrast=0.14, Saturation=0.16, TintColor=Color3.fromRGB(245,220,255)},
+		Bloom={Intensity=0.20, Size=20, Threshold=0.93}
+	},
+	["Frosted Valley"] = {
+		Lighting={ClockTime=10.0, Brightness=2.0, ExposureCompensation=-0.02, FogStart=0, FogEnd=200, FogColor=Color3.fromRGB(230,235,240)},
+		Atmosphere={Density=0.95, Color=Color3.fromRGB(235,245,255), Decay=Color3.fromRGB(205,215,235), Glare=0.0, Haze=3.0},
+		Color={Brightness=0.01, Contrast=0.08, Saturation=-0.12, TintColor=Color3.fromRGB(240,245,255)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.98}
+	},
+	["Polar Veil"] = {
+		Lighting={ClockTime=2.8, Brightness=1.3, ExposureCompensation=-0.04, GlobalShadows=true},
+		Atmosphere={Density=0.34, Color=Color3.fromRGB(205,225,245), Decay=Color3.fromRGB(120,150,190), Glare=0.08, Haze=1.1},
+		Color={Brightness=0.0, Contrast=0.12, Saturation=-0.02, TintColor=Color3.fromRGB(220,235,250)},
+		Bloom={Intensity=0.10, Size=16, Threshold=0.94}
+	},
+	["Rainbow After Rain"] = {
+		Lighting={ClockTime=16.7, Brightness=2.2, ExposureCompensation=0.04, FogStart=0, FogEnd=380, FogColor=Color3.fromRGB(185,195,210)},
+		Atmosphere={Density=0.52, Color=Color3.fromRGB(220,230,245), Decay=Color3.fromRGB(135,145,165), Glare=0.08, Haze=1.5},
+		Color={Brightness=0.02, Contrast=0.10, Saturation=0.14, TintColor=Color3.fromRGB(250,250,255)},
+		Bloom={Intensity=0.18, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.16, Spread=0.93}
+	},
+	["Highland Mist"] = {
+		Lighting={ClockTime=7.6, Brightness=1.7, ExposureCompensation=-0.02, FogStart=0, FogEnd=180, FogColor=Color3.fromRGB(210,215,220)},
+		Atmosphere={Density=0.88, Color=Color3.fromRGB(225,230,235), Decay=Color3.fromRGB(195,200,205), Glare=0, Haze=3.0},
+		Color={Brightness=0.0, Contrast=-0.02, Saturation=-0.10, TintColor=Color3.fromRGB(235,240,245)},
+		Bloom={Intensity=0.05, Size=10, Threshold=0.99}
+	},
+	["Harbor Dawn"] = {
+		Lighting={ClockTime=5.6, Brightness=2.0, ExposureCompensation=0.04},
+		Atmosphere={Density=0.30, Color=Color3.fromRGB(255,215,190), Decay=Color3.fromRGB(150,120,100), Glare=0.10, Haze=1.2},
+		Color={Brightness=0.01, Contrast=0.10, Saturation=0.08, TintColor=Color3.fromRGB(255,235,215)},
+		Bloom={Intensity=0.14, Size=16, Threshold=0.95},
+		SunRays={Intensity=0.12, Spread=0.90}
+	},
+	["Cinder Skies"] = {
+		Lighting={ClockTime=17.0, Brightness=1.6, ExposureCompensation=-0.04, FogStart=0, FogEnd=260, FogColor=Color3.fromRGB(120,110,105)},
+		Atmosphere={Density=0.86, Color=Color3.fromRGB(150,130,120), Decay=Color3.fromRGB(95,80,70), Glare=0.02, Haze=2.8},
+		Color={Brightness=-0.02, Contrast=0.12, Saturation=-0.12, TintColor=Color3.fromRGB(215,205,195)},
+		Bloom={Intensity=0.02, Size=8, Threshold=1.0}
+	},
+	["Azure Zenith"] = {
+		Lighting={ClockTime=11.8, Brightness=3.0, ExposureCompensation=0.10, GlobalShadows=true},
+		Atmosphere={Density=0.20, Color=Color3.fromRGB(210,235,255), Decay=Color3.fromRGB(120,160,210), Glare=0.04, Haze=0.8},
+		Color={Brightness=0.00, Contrast=0.06, Saturation=0.06, TintColor=Color3.fromRGB(255,255,255)},
+		Bloom={Intensity=0.12, Size=14, Threshold=0.97},
+		SunRays={Intensity=0.08, Spread=0.84}
+	},
+	["Gilded Morning"] = {
+		Lighting={ClockTime=7.9, Brightness=2.3, ExposureCompensation=0.06},
+		Atmosphere={Density=0.28, Color=Color3.fromRGB(255,230,180), Decay=Color3.fromRGB(190,150,100), Glare=0.12, Haze=1.0},
+		Color={Brightness=0.02, Contrast=0.10, Saturation=0.10, TintColor=Color3.fromRGB(255,240,205)},
+		Bloom={Intensity=0.16, Size=18, Threshold=0.95}
+	},
+	["Pearl Overcast"] = {
+		Lighting={ClockTime=12.9, Brightness=1.7, ExposureCompensation=-0.02},
+		Atmosphere={Density=0.60, Color=Color3.fromRGB(225,230,235), Decay=Color3.fromRGB(160,165,170), Glare=0.0, Haze=1.9},
+		Color={Brightness=0.0, Contrast=0.06, Saturation=-0.06, TintColor=Color3.fromRGB(240,240,245)},
+		Bloom={Intensity=0.06, Size=12, Threshold=0.98}
+	},
+	["Sunrise Halo"] = {
+		Lighting={ClockTime=5.9, Brightness=2.2, ExposureCompensation=0.06, GlobalShadows=true},
+		Atmosphere={Density=0.28, Color=Color3.fromRGB(255,215,180), Decay=Color3.fromRGB(170,120,90), Glare=0.14, Haze=1.1},
+		Color={Brightness=0.02, Contrast=0.10, Saturation=0.10, TintColor=Color3.fromRGB(255,235,215)},
+		Bloom={Intensity=0.18, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.14, Spread=0.90},
+		DOF={FocusDistance=20000, InFocusRadius=10000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Noon Crystal Sun"] = {
+		Lighting={ClockTime=12.0, Brightness=3.0, ExposureCompensation=0.10, GlobalShadows=true},
+		Atmosphere={Density=0.20, Color=Color3.fromRGB(210,235,255), Decay=Color3.fromRGB(120,160,210), Glare=0.06, Haze=0.8},
+		Color={Brightness=0.00, Contrast=0.08, Saturation=0.06, TintColor=Color3.fromRGB(255,255,255)},
+		Bloom={Intensity=0.12, Size=14, Threshold=0.97},
+		SunRays={Intensity=0.10, Spread=0.86},
+		DOF={FocusDistance=22000, InFocusRadius=12000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Sunset Disk Clear"] = {
+		Lighting={ClockTime=18.2, Brightness=2.1, ExposureCompensation=0.04},
+		Atmosphere={Density=0.30, Color=Color3.fromRGB(255,190,140), Decay=Color3.fromRGB(170,110,70), Glare=0.12, Haze=1.0},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.10, TintColor=Color3.fromRGB(255,220,175)},
+		Bloom={Intensity=0.18, Size=18, Threshold=0.95},
+		SunRays={Intensity=0.15, Spread=0.90},
+		DOF={FocusDistance=20000, InFocusRadius=10000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["High Desert Sun"] = {
+		Lighting={ClockTime=13.3, Brightness=2.7, ExposureCompensation=0.08},
+		Atmosphere={Density=0.22, Color=Color3.fromRGB(255,225,170), Decay=Color3.fromRGB(200,160,100), Glare=0.16, Haze=0.9},
+		Color={Brightness=0.02, Contrast=0.10, Saturation=0.04, TintColor=Color3.fromRGB(255,240,195)},
+		Bloom={Intensity=0.20, Size=20, Threshold=0.94},
+		SunRays={Intensity=0.12, Spread=0.88},
+		DOF={FocusDistance=21000, InFocusRadius=11000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Winter Pale Sun"] = {
+		Lighting={ClockTime=11.0, Brightness=2.2, ExposureCompensation=0.02},
+		Atmosphere={Density=0.26, Color=Color3.fromRGB(235,245,255), Decay=Color3.fromRGB(160,185,210), Glare=0.04, Haze=0.9},
+		Color={Brightness=0.00, Contrast=0.08, Saturation=-0.04, TintColor=Color3.fromRGB(240,245,255)},
+		Bloom={Intensity=0.10, Size=14, Threshold=0.97},
+		SunRays={Intensity=0.08, Spread=0.86},
+		DOF={FocusDistance=20000, InFocusRadius=10000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Ocean Sun Glare"] = {
+		Lighting={ClockTime=16.0, Brightness=2.4, ExposureCompensation=0.06},
+		Atmosphere={Density=0.24, Color=Color3.fromRGB(210,235,255), Decay=Color3.fromRGB(110,150,200), Glare=0.10, Haze=0.9},
+		Color={Brightness=0.01, Contrast=0.08, Saturation=0.10, TintColor=Color3.fromRGB(240,250,255)},
+		Bloom={Intensity=0.22, Size=22, Threshold=0.94},
+		SunRays={Intensity=0.16, Spread=0.90},
+		DOF={FocusDistance=21000, InFocusRadius=11000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Moonrise Amber"] = {
+		Lighting={ClockTime=19.6, Brightness=1.5, ExposureCompensation=0.00, GlobalShadows=true},
+		Atmosphere={Density=0.30, Color=Color3.fromRGB(245,210,170), Decay=Color3.fromRGB(150,110,80), Glare=0.06, Haze=1.0},
+		Color={Brightness=0.00, Contrast=0.12, Saturation=0.02, TintColor=Color3.fromRGB(235,220,205)},
+		Bloom={Intensity=0.10, Size=16, Threshold=0.95},
+		SunRays={Intensity=0.06, Spread=0.84},
+		DOF={FocusDistance=22000, InFocusRadius=12000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Blue Moon Night"] = {
+		Lighting={ClockTime=1.2, Brightness=1.25, ExposureCompensation=-0.02, GlobalShadows=true},
+		Atmosphere={Density=0.24, Color=Color3.fromRGB(205,220,255), Decay=Color3.fromRGB(90,120,170), Glare=0.02, Haze=0.8},
+		Color={Brightness=0.00, Contrast=0.10, Saturation=-0.06, TintColor=Color3.fromRGB(215,230,255)},
+		Bloom={Intensity=0.08, Size=14, Threshold=0.95},
+		SunRays={Intensity=0.02, Spread=0.76},
+		DOF={FocusDistance=23000, InFocusRadius=13000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Supermoon Clear"] = {
+		Lighting={ClockTime=0.3, Brightness=1.35, ExposureCompensation=0.00, GlobalShadows=true},
+		Atmosphere={Density=0.20, Color=Color3.fromRGB(220,235,255), Decay=Color3.fromRGB(110,140,190), Glare=0.04, Haze=0.7},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=-0.02, TintColor=Color3.fromRGB(230,240,255)},
+		Bloom={Intensity=0.12, Size=18, Threshold=0.94},
+		SunRays={Intensity=0.02, Spread=0.74},
+		DOF={FocusDistance=24000, InFocusRadius=14000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Harvest Moonrise"] = {
+		Lighting={ClockTime=19.2, Brightness=1.4, ExposureCompensation=0.02, GlobalShadows=true},
+		Atmosphere={Density=0.26, Color=Color3.fromRGB(255,210,165), Decay=Color3.fromRGB(170,120,80), Glare=0.10, Haze=0.9},
+		Color={Brightness=0.00, Contrast=0.12, Saturation=0.06, TintColor=Color3.fromRGB(255,225,190)},
+		Bloom={Intensity=0.16, Size=18, Threshold=0.94},
+		SunRays={Intensity=0.06, Spread=0.84},
+		DOF={FocusDistance=22000, InFocusRadius=12000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Snow Moon"] = {
+		Lighting={ClockTime=2.0, Brightness=1.3, ExposureCompensation=-0.02, GlobalShadows=true},
+		Atmosphere={Density=0.22, Color=Color3.fromRGB(235,245,255), Decay=Color3.fromRGB(160,185,210), Glare=0.02, Haze=0.8},
+		Color={Brightness=0.01, Contrast=0.10, Saturation=-0.12, TintColor=Color3.fromRGB(240,245,255)},
+		Bloom={Intensity=0.10, Size=16, Threshold=0.95},
+		SunRays={Intensity=0.02, Spread=0.76},
+		DOF={FocusDistance=23000, InFocusRadius=13000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Moon Above Pines"] = {
+		Lighting={ClockTime=22.8, Brightness=1.2, ExposureCompensation=-0.02, GlobalShadows=true},
+		Atmosphere={Density=0.24, Color=Color3.fromRGB(210,225,245), Decay=Color3.fromRGB(120,150,190), Glare=0.02, Haze=0.9},
+		Color={Brightness=0.00, Contrast=0.10, Saturation=-0.04, TintColor=Color3.fromRGB(220,235,250)},
+		Bloom={Intensity=0.08, Size=14, Threshold=0.95},
+		SunRays={Intensity=0.02, Spread=0.74},
+		DOF={FocusDistance=22000, InFocusRadius=12000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Moonset Violet"] = {
+		Lighting={ClockTime=5.0, Brightness=1.6, ExposureCompensation=0.02, GlobalShadows=true},
+		Atmosphere={Density=0.30, Color=Color3.fromRGB(230,200,255), Decay=Color3.fromRGB(140,110,170), Glare=0.06, Haze=1.0},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.04, TintColor=Color3.fromRGB(240,220,255)},
+		Bloom={Intensity=0.12, Size=16, Threshold=0.95},
+		SunRays={Intensity=0.06, Spread=0.84},
+		DOF={FocusDistance=21000, InFocusRadius=11000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Tropical Moonlit"] = {
+		Lighting={ClockTime=0.8, Brightness=1.3, ExposureCompensation=0.00, GlobalShadows=true},
+		Atmosphere={Density=0.22, Color=Color3.fromRGB(200,230,240), Decay=Color3.fromRGB(100,170,160), Glare=0.06, Haze=0.9},
+		Color={Brightness=0.01, Contrast=0.10, Saturation=0.06, TintColor=Color3.fromRGB(220,245,235)},
+		Bloom={Intensity=0.14, Size=18, Threshold=0.94},
+		SunRays={Intensity=0.02, Spread=0.76},
+		DOF={FocusDistance=23000, InFocusRadius=13000, NearIntensity=0, FarIntensity=0.02}
+	},
+	["Golden Hour+"] = {
+		Lighting={ClockTime=17.2, Brightness=2.2, ExposureCompensation=0.08},
+		Atmosphere={Density=0.32, Color=Color3.fromRGB(255,200,120), Decay=Color3.fromRGB(160,110,60), Glare=0.15, Haze=1.2},
+		Color={Brightness=0.02, Contrast=0.12, Saturation=0.15, TintColor=Color3.fromRGB(255,225,170)},
+		SunRays={Intensity=0.12, Spread=0.88},
+		Bloom={Intensity=0.18, Size=20, Threshold=0.94}
+	},
+	["Crepuscular Beam"] = {
+		Lighting={ClockTime=17.0, Brightness=2.2, ExposureCompensation=0.06},
+		Atmosphere={Density=0.34, Color=Color3.fromRGB(245,205,160), Decay=Color3.fromRGB(160,120,90), Glare=0.18, Haze=1.3},
+		Color={Brightness=0.01, Contrast=0.12, Saturation=0.10, TintColor=Color3.fromRGB(255,230,190)},
+		Bloom={Intensity=0.20, Size=20, Threshold=0.93},
+		SunRays={Intensity=0.22, Spread=0.92},
+		DOF={FocusDistance=20000, InFocusRadius=10000, NearIntensity=0, FarIntensity=0.02}
+	},
 }
 
 ----------------- UI BUILD (4 kolom horizontal) -----------------
