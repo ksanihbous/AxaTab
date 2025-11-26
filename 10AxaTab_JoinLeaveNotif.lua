@@ -1,18 +1,6 @@
 --==========================================================
 --  10AxaTab_JoinLeave.lua
 --  TAB "Join/Leave Notif"
---  Fitur:
---    - Log Join / Leave pemain
---    - Tab Join / Leave / Player / Profile
---    - Search User/DisplayName
---    - Toast notif join/leave (teman = "koneksi anda")
---      * Format:
---        - Player biasa:
---            "DisplayName (@username) bergabung dalam map"
---            "DisplayName (@username) keluar dari map"
---        - Koneksi (friend):
---            "DisplayName (@username) koneksi anda bergabung dalam map"
---            "DisplayName (@username) koneksi anda keluar dari map"
 --==========================================================
 
 local frame        = TAB_FRAME
@@ -23,8 +11,10 @@ local TweenService = TweenService
 local UserInputService = UserInputService
 local StarterGui   = StarterGui
 local camera       = Camera or workspace.CurrentCamera
+
 local Lighting     = game:GetService("Lighting")
 local TextService  = game:GetService("TextService")
+local SoundService = game:GetService("SoundService")
 
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -124,11 +114,39 @@ toastText.Parent = ToastCard
 local toastQueue = {}
 local toastBusy  = false
 
--- NOTIF toggle state (default ON sesuai permintaan)
+-- NOTIF toggle (toast visual)
 local notifEnabled = true
 
+-- SOUND toggle (ikon 🔊)
+local soundEnabled = true
+
+-- 1 sound ID, beda speed buat join / leave
+local BASE_SOUND_ID = "rbxassetid://6026984224"
+
+local function playOneShot(speed)
+    if not soundEnabled then return end
+    local s = Instance.new("Sound")
+    s.SoundId = BASE_SOUND_ID
+    s.Volume = 0.45
+    s.PlaybackSpeed = speed or 1
+    s.Parent = SoundService
+    s:Play()
+    task.delay(3, function()
+        if s then s:Destroy() end
+    end)
+end
+
+local function playJoinSound()
+    -- pitch sedikit lebih tinggi
+    playOneShot(1.12)
+end
+
+local function playLeaveSound()
+    -- pitch sedikit lebih rendah
+    playOneShot(0.9)
+end
+
 local function showToast(kind, message)
-    -- guard: hanya jalan kalau NOTIF: ON
     if not notifEnabled then return end
 
     toastAccent.BackgroundColor3 = (kind == "leave")
@@ -254,7 +272,6 @@ header.TextColor3 = Color3.fromRGB(40, 40, 70)
 header.Text = "📡 Join / Leave Notif & Player Log"
 header.Parent = frame
 
--- Subheader pendek
 local sub = Instance.new("TextLabel")
 sub.Name = "JoinLeaveSub"
 sub.Size = UDim2.new(1, -10, 0, 34)
@@ -269,7 +286,7 @@ sub.TextColor3 = Color3.fromRGB(100, 100, 140)
 sub.Text = "Pantau siapa yang masuk/keluar map, daftar pemain aktif, dan detail profil."
 sub.Parent = frame
 
--- Header bar: segments + NOTIF toggle
+-- Header bar
 local headerBar = Instance.new("Frame")
 headerBar.Name = "HeaderBar"
 headerBar.Size = UDim2.new(1, -10, 0, 30)
@@ -289,24 +306,32 @@ hbStroke.Color = Color3.fromRGB(210, 214, 235)
 hbStroke.Transparency = 0.4
 hbStroke.Parent = headerBar
 
-local segLabel = Instance.new("TextLabel")
-segLabel.Name = "SegLabel"
-segLabel.BackgroundTransparency = 1
-segLabel.Size = UDim2.new(0, 70, 1, 0)
-segLabel.Position = UDim2.new(0, 8, 0, 0)
-segLabel.Font = Enum.Font.Gotham
-segLabel.TextSize = 13
-segLabel.TextColor3 = Color3.fromRGB(70,70,110)
-segLabel.TextXAlignment = Enum.TextXAlignment.Left
-segLabel.Text = "Tab:"
-segLabel.Parent = headerBar
+-- ICON SOUND (ganti teks "Tab:")
+local soundBtn = glassChipButton("🔊")
+soundBtn.Name = "SoundBtn"
+soundBtn.Size = UDim2.new(0, 40, 0, 24)
+soundBtn.Position = UDim2.new(0, 6, 0.5, -12)
+soundBtn.Parent = headerBar
 
+local function refreshSoundBtn()
+    soundBtn.Text = soundEnabled and "🔊" or "🔇"
+    soundBtn.TextColor3 = soundEnabled and Color3.fromRGB(20, 120, 60) or Color3.fromRGB(120, 50, 50)
+    soundBtn.BackgroundTransparency = soundEnabled and 0.15 or 0.35
+end
+refreshSoundBtn()
+
+soundBtn.MouseButton1Click:Connect(function()
+    soundEnabled = not soundEnabled
+    refreshSoundBtn()
+end)
+
+-- Segments Scroll
 local segScroll = Instance.new("ScrollingFrame")
 segScroll.Name = "SegScroll"
 segScroll.BackgroundTransparency = 1
 segScroll.BorderSizePixel = 0
 segScroll.Size = UDim2.new(1, -180, 1, 0)
-segScroll.Position = UDim2.new(0, 70, 0, 0)
+segScroll.Position = UDim2.new(0, 54, 0, 0) -- geser dikit, karena soundBtn di kiri
 segScroll.ScrollBarThickness = 0
 segScroll.ScrollBarImageTransparency = 1
 segScroll.ScrollingDirection = Enum.ScrollingDirection.X
@@ -348,6 +373,12 @@ end)
 -- Seg buttons
 local segButtons = {}
 
+local function layoutSegments()
+    segContainer.Size = UDim2.new(0, segLayout.AbsoluteContentSize.X, 1, 0)
+    segScroll.CanvasSize = UDim2.new(0, segLayout.AbsoluteContentSize.X, 0, 0)
+end
+segLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(layoutSegments)
+
 local function createSegButton(name, label)
     local b = glassChipButton(label)
     b.Name = name
@@ -360,17 +391,12 @@ segButtons.Join   = createSegButton("SegJoin",   "Join")
 segButtons.Leave  = createSegButton("SegLeave",  "Leave")
 segButtons.Player = createSegButton("SegAll",    "Player")
 segButtons.Profile= createSegButton("SegProfile","Profile")
-segButtons.Profile.Visible = false  -- muncul saat dipakai pertama kali
+segButtons.Profile.Visible = false
 
-local function layoutSegments()
-    segContainer.Size = UDim2.new(0, segLayout.AbsoluteContentSize.X, 1, 0)
-    segScroll.CanvasSize = UDim2.new(0, segLayout.AbsoluteContentSize.X, 0, 0)
-end
-segLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(layoutSegments)
 layoutSegments()
 
 ------------------------------------------------------
--- BODY: Search bar + Scrolls
+-- BODY: Search + Scrolls (XY)
 ------------------------------------------------------
 local body = Instance.new("Frame")
 body.Name = "Body"
@@ -429,17 +455,12 @@ searchBox.TextSize = 14
 searchBox.TextColor3 = Color3.fromRGB(40,40,70)
 searchBox.TextXAlignment = Enum.TextXAlignment.Left
 searchBox.ClearTextOnFocus = false
-
--- Sesuai permintaan:
--- Placeholder: "Search User/DisplayName"
--- TextBox.Text dikosongkan (tidak ada teks default)
 searchBox.PlaceholderText = "Search User/DisplayName"
 searchBox.PlaceholderColor3 = Color3.fromRGB(130,136,150)
-searchBox.Text = ""
-
+searchBox.Text = "" -- no default text
 searchBox.Parent = searchBg
 
--- Scroll factory
+-- Scroll factory (VERTIKAL + HORIZONTAL)
 local function newScroll(name)
     local sf = Instance.new("ScrollingFrame")
     sf.Name = name
@@ -448,7 +469,7 @@ local function newScroll(name)
     sf.ScrollBarThickness = 6
     sf.ScrollBarImageColor3 = Color3.fromRGB(150,155,175)
     sf.ScrollBarImageTransparency = 0.1
-    sf.ScrollingDirection = Enum.ScrollingDirection.Y
+    sf.ScrollingDirection = Enum.ScrollingDirection.XY
     sf.TopImage = "rbxassetid://7445543667"
     sf.BottomImage = "rbxassetid://7445543667"
     sf.Parent = body
@@ -460,7 +481,12 @@ local function newScroll(name)
     layout.Parent = sf
 
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        sf.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 8)
+        -- XY canvas: X dari lebar konten (row pakai width fix),
+        -- Y dari tinggi konten
+        sf.CanvasSize = UDim2.new(
+            0, layout.AbsoluteContentSize.X + 8,
+            0, layout.AbsoluteContentSize.Y + 8
+        )
     end)
 
     return sf, layout
@@ -489,7 +515,7 @@ scrollLeave.Visible = false
 scrollAll.Visible   = false
 
 ------------------------------------------------------
--- PROFILE PAGE (di dalam body)
+-- PROFILE PAGE (scroll XY)
 ------------------------------------------------------
 local profilePage = Instance.new("Frame")
 profilePage.Name = "ProfilePage"
@@ -542,7 +568,7 @@ pfScroll.BorderSizePixel = 0
 pfScroll.ScrollBarThickness = 6
 pfScroll.ScrollBarImageColor3 = Color3.fromRGB(150,155,175)
 pfScroll.ScrollBarImageTransparency = 0.1
-pfScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+pfScroll.ScrollingDirection = Enum.ScrollingDirection.XY
 pfScroll.Size = UDim2.new(1, -12, 1, -46)
 pfScroll.Position = UDim2.new(0, 6, 0, 42)
 pfScroll.Parent = profilePage
@@ -550,7 +576,7 @@ pfScroll.Parent = profilePage
 local pfList = Instance.new("Frame")
 pfList.Name = "ProfileList"
 pfList.BackgroundTransparency = 1
-pfList.Size = UDim2.new(1, -4, 0, 0)
+pfList.Size = UDim2.new(0, 720, 0, 0) -- lebar fix supaya bisa scroll horizontal
 pfList.Position = UDim2.new(0, 2, 0, 0)
 pfList.Parent = pfScroll
 
@@ -561,8 +587,8 @@ pfLayout.Padding = UDim.new(0, 4)
 pfLayout.Parent = pfList
 
 pfLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    pfList.Size = UDim2.new(1, -4, 0, pfLayout.AbsoluteContentSize.Y)
-    pfScroll.CanvasSize = UDim2.new(0, 0, 0, pfLayout.AbsoluteContentSize.Y + 8)
+    pfList.Size = UDim2.new(0, 720, 0, pfLayout.AbsoluteContentSize.Y)
+    pfScroll.CanvasSize = UDim2.new(0, 720 + 8, 0, pfLayout.AbsoluteContentSize.Y + 8)
 end)
 
 local function clearProfile()
@@ -740,8 +766,10 @@ local function isFriendUserId(uid)
 end
 
 ------------------------------------------------------
--- LOG ITEM MAKERS
+-- LOG ITEM MAKERS (rows lebar fix supaya bisa scroll horizontal)
 ------------------------------------------------------
+local ROW_WIDTH = 720
+
 local function getAvatar(userId)
     local ok, content = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
@@ -768,7 +796,7 @@ local function makeJoinLeaveItem(parentScroll, info, kind)
     row.Name = string.format("%s_%d_%d", kind, info.userId, math.floor(os.clock()*100))
     row.AutoButtonColor = false
     row.Text = ""
-    row.Size = UDim2.new(1, 0, 0, 42)
+    row.Size = UDim2.new(0, ROW_WIDTH, 0, 42) -- width fix => bisa scroll horizontal
     row.Parent = parentScroll
     glassRowBase(row)
 
@@ -833,7 +861,7 @@ local function makeAllItem(parentScroll, info)
     row.Name = "All_"..tostring(info.userId)
     row.AutoButtonColor = false
     row.Text = ""
-    row.Size = UDim2.new(1, 0, 0, 42)
+    row.Size = UDim2.new(0, ROW_WIDTH, 0, 42)
     row.Parent = parentScroll
     glassRowBase(row)
 
@@ -887,7 +915,7 @@ end
 ------------------------------------------------------
 -- PROFILE RENDER
 ------------------------------------------------------
-local joinTimes = {}  -- userId -> os.time() saat terdeteksi (lokal)
+local joinTimes = {}  -- userId -> os.time() join lokal
 
 local function durHMS(sec)
     sec = math.max(0, math.floor(sec))
@@ -969,7 +997,7 @@ end
 ------------------------------------------------------
 -- ROSTER & EVENTS
 ------------------------------------------------------
-local allRows = {}  -- userId -> row (Player tab)
+local allRows = {}  -- userId -> row di Player tab
 
 local function snapshot()
     local map = {}
@@ -1009,12 +1037,7 @@ local function rebuildAll(nowMap)
 end
 
 local function upsertAll(info)
-    if allRows[info.userId] and allRows[info.userId].Parent then
-        -- bisa di-update kalau mau, tapi untuk kesederhanaan rebuild saja
-        rebuildAll(snapshot())
-    else
-        rebuildAll(snapshot())
-    end
+    rebuildAll(snapshot())
 end
 
 local function removeFromAll(uid)
@@ -1047,7 +1070,6 @@ local function handlePlayerJoin(p)
     makeJoinLeaveItem(scrollJoin, info, "Join")
     upsertAll(info)
 
-    -- pesan untuk toast
     local isConn = isFriendUserId(p.UserId)
     local msg
     if isConn then
@@ -1056,6 +1078,7 @@ local function handlePlayerJoin(p)
         msg = string.format("%s (@%s) bergabung dalam map", info.displayName or info.name, info.name)
     end
     pushToast("join", msg)
+    playJoinSound()
 end
 
 local function handlePlayerLeave(p)
@@ -1078,37 +1101,21 @@ local function handlePlayerLeave(p)
         msg = string.format("%s (@%s) keluar dari map", info.displayName or info.name, info.name)
     end
     pushToast("leave", msg)
-end
-
--- Hook events
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then
-        -- tidak push join di awal (biar log bersih); hanya masuk ke All tab
-    end
+    playLeaveSound()
 end
 
 Players.PlayerAdded:Connect(handlePlayerJoin)
 Players.PlayerRemoving:Connect(handlePlayerLeave)
 
 ------------------------------------------------------
--- AUTO-RENDER PROFILE KETIKA TAB PROFILE DIPILIH
+-- AUTO-RENDER PROFILE SAAT TAB PROFILE
 ------------------------------------------------------
--- Kalau user klik row, activeProfileInfo akan terisi lalu tab di-set ke Profile.
--- Di sini pastikan profile di-render ketika tab itu aktif.
 task.spawn(function()
     while true do
         if activeTab == "Profile" and activeProfileInfo then
             renderProfile(activeProfileInfo)
-            -- render sekali, lalu tunggu sampai user ganti target
             activeProfileInfo = nil
         end
         task.wait(0.2)
     end
 end)
-
--- Selesai. Tab 10 Join/Leave Notif:
---  - Search placeholder "Search User/DisplayName" (Text kosong)
---  - Notif toast join/leave dengan format:
---      * Biasa  : "DisplayName (@username) bergabung/keluar dalam map"
---      * Koneksi: "DisplayName (@username) koneksi anda bergabung/keluar dalam map"
---  - NOTIF: ON/OFF button mengontrol toast, default ON.
