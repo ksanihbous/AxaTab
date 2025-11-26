@@ -3,23 +3,45 @@
 --  Dipanggil via loadstring dari CORE AxaHub
 --  Env yang tersedia (dari core):
 --    TAB_FRAME, TAB_ID
---    Players, LocalPlayer, RunService, Camera, StarterGui
---    AXA_TWEEN (optional)
+--    Players, LocalPlayer, RunService, TweenService, HttpService,
+--    UserInputService, VirtualInputManager, ContextActionService,
+--    StarterGui, CoreGui, Camera, SetActiveTab, AXA_TWEEN (opsional)
 --==========================================================
 
-local frame       = TAB_FRAME      -- frame putih di dalam ContentHolder
-local player      = LocalPlayer
-local players     = Players
-local runService  = RunService
-local starterGui  = StarterGui or game:GetService("StarterGui")
+local frame        = TAB_FRAME
+local player       = LocalPlayer
+local players      = Players
+local runService   = RunService
+local tweenService = TweenService
+local starterGui   = StarterGui
 
-local statsSvc    = game:GetService("Stats")
-local tween       = AXA_TWEEN      -- kalau mau animasi ringan (opsional)
+local TeleportService = game:GetService("TeleportService")
+local Stats           = game:GetService("Stats")
+
+-- fallback tween kalau AXA_TWEEN nggak ada
+local function axaTween(obj, t, props)
+    if _G.AxaHub_Tween then
+        return _G.AxaHub_Tween(obj, t, props)
+    end
+    local info = TweenInfo.new(t or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tw = tweenService:Create(obj, info, props)
+    tw:Play()
+    return tw
+end
+
+local function notify(title, text, dur)
+    pcall(function()
+        starterGui:SetCore("SendNotification", {
+            Title   = title or "Info",
+            Text    = text or "",
+            Duration = dur or 2
+        })
+    end)
+end
 
 --==========================================================
---  HEADER
+-- HEADER
 --==========================================================
-
 local header = Instance.new("TextLabel")
 header.Name = "Header"
 header.Size = UDim2.new(1, -10, 0, 22)
@@ -29,7 +51,7 @@ header.Font = Enum.Font.GothamBold
 header.TextSize = 15
 header.TextColor3 = Color3.fromRGB(40, 40, 60)
 header.TextXAlignment = Enum.TextXAlignment.Left
-header.Text = "📡 Server Dashboard"
+header.Text = "📊 Server Dashboard"
 header.Parent = frame
 
 local sub = Instance.new("TextLabel")
@@ -43,25 +65,152 @@ sub.TextColor3 = Color3.fromRGB(90, 90, 120)
 sub.TextXAlignment = Enum.TextXAlignment.Left
 sub.TextYAlignment = Enum.TextYAlignment.Top
 sub.TextWrapped = true
-sub.Text = "Monitor info server: JobId, pemain, ping, FPS, dan jarak setiap pemain dari posisimu."
+sub.Text = "Monitor info server, performa client, pemain online, dan tombol utilitas (rejoin, copy ID, dan lain-lain) dalam satu panel."
 sub.Parent = frame
 
 --==========================================================
---  UTILS
+-- SCROLLINGFRAME UTAMA (BODY) DI BAWAH HEADER
 --==========================================================
+local bodyScroll = Instance.new("ScrollingFrame")
+bodyScroll.Name = "BodyScroll"
+bodyScroll.Position = UDim2.new(0, 0, 0, 64)      -- persis gaya CORE: di bawah header+sub
+bodyScroll.Size = UDim2.new(1, 0, 1, -64)
+bodyScroll.BackgroundTransparency = 1
+bodyScroll.BorderSizePixel = 0
+bodyScroll.ScrollBarThickness = 4
+bodyScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+bodyScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+bodyScroll.Parent = frame
 
-local function safeNotify(title, text, duration)
-    pcall(function()
-        starterGui:SetCore("SendNotification", {
-            Title   = title,
-            Text    = text,
-            Duration = duration or 2
-        })
-    end)
+local bodyLayout = Instance.new("UIListLayout")
+bodyLayout.FillDirection = Enum.FillDirection.Vertical
+bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+bodyLayout.Padding = UDim.new(0, 8)
+bodyLayout.Parent = bodyScroll
+
+bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    bodyScroll.CanvasSize = UDim2.new(0, 0, 0, bodyLayout.AbsoluteContentSize.Y + 10)
+end)
+
+------------------------------------------------------------
+-- Helper bikin "card" section di dalam bodyScroll
+------------------------------------------------------------
+local function makeCard(height)
+    local card = Instance.new("Frame")
+    card.Name = "Card"
+    card.Size = UDim2.new(1, -12, 0, height)
+    card.BackgroundColor3 = Color3.fromRGB(240, 240, 248)
+    card.BorderSizePixel = 0
+    card.BackgroundTransparency = 0
+    card.Parent = bodyScroll
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 12)
+    c.Parent = card
+
+    local s = Instance.new("UIStroke")
+    s.Thickness = 1
+    s.Color = Color3.fromRGB(210, 210, 225)
+    s.Transparency = 0.3
+    s.Parent = card
+
+    return card
 end
 
-local function formatSeconds(sec)
-    sec = math.max(0, math.floor(sec or 0 + 0.5))
+local function makeSectionTitle(parent, text)
+    local label = Instance.new("TextLabel")
+    label.Name = "SectionTitle"
+    label.Size = UDim2.new(1, -10, 0, 20)
+    label.Position = UDim2.new(0, 8, 0, 8)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(60, 60, 90)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = text
+    label.Parent = parent
+    return label
+end
+
+local function makeSectionSub(parent, text, offsetY)
+    local label = Instance.new("TextLabel")
+    label.Name = "SectionSub"
+    label.Size = UDim2.new(1, -10, 0, 30)
+    label.Position = UDim2.new(0, 8, 0, offsetY)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextColor3 = Color3.fromRGB(110, 110, 135)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Top
+    label.TextWrapped = true
+    label.Text = text
+    label.Parent = parent
+    return label
+end
+
+--==========================================================
+-- CARD 1: RINGKASAN SERVER + PERFORMA
+--==========================================================
+local summaryCard = makeCard(110)
+
+makeSectionTitle(summaryCard, "Ringkasan Server (Live)")
+
+local summaryLabel = Instance.new("TextLabel")
+summaryLabel.Name = "SummaryLabel"
+summaryLabel.Size = UDim2.new(1, -16, 0, 70)
+summaryLabel.Position = UDim2.new(0, 8, 0, 30)
+summaryLabel.BackgroundTransparency = 1
+summaryLabel.Font = Enum.Font.Code
+summaryLabel.TextSize = 12
+summaryLabel.TextColor3 = Color3.fromRGB(60, 60, 90)
+summaryLabel.TextXAlignment = Enum.TextXAlignment.Left
+summaryLabel.TextYAlignment = Enum.TextYAlignment.Top
+summaryLabel.TextWrapped = true
+summaryLabel.Text = "Memuat info server..."
+summaryLabel.Parent = summaryCard
+
+local startTime = tick()
+local smoothFPS = 60
+runService.RenderStepped:Connect(function(dt)
+    -- smoothing FPS biar nggak terlalu “spike”
+    local current = 1 / math.max(dt, 0.0001)
+    smoothFPS = smoothFPS + (current - smoothFPS) * 0.1
+end)
+
+local function getPingMs()
+    local ok, ping = pcall(function()
+        local network = Stats.Network
+        if not network then return nil end
+        local serverStats = network.ServerStatsItem
+        if not serverStats then return nil end
+        local stat = serverStats:FindFirstChild("Data Ping") or serverStats:FindFirstChild("Ping")
+        if not stat then return nil end
+        if stat.GetValue then
+            return math.floor(stat:GetValue() + 0.5)
+        elseif typeof(stat.Value) == "number" then
+            return math.floor(stat.Value + 0.5)
+        end
+        return nil
+    end)
+    if ok then
+        return ping
+    end
+    return nil
+end
+
+local function getMemoryMB()
+    local ok, kb = pcall(function()
+        return collectgarbage("count") -- KB
+    end)
+    if ok and typeof(kb) == "number" then
+        return kb / 1024
+    end
+    return nil
+end
+
+local function formatDuration(sec)
+    sec = math.floor(sec + 0.5)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     local s = sec % 60
@@ -72,378 +221,321 @@ local function formatSeconds(sec)
     end
 end
 
-local function getPingMs()
-    local ok, result = pcall(function()
-        local network = statsSvc.Network
-        local dataPingItem = network.ServerStatsItem["Data Ping"]
-        if dataPingItem and dataPingItem.GetValue then
-            local v = dataPingItem:GetValue()
-            if type(v) == "number" then
-                return v
-            end
-        end
-        return nil
-    end)
-    if ok and result then
-        return result
+local function refreshSummary()
+    local currentPlayers = #players:GetPlayers()
+    local maxPlayers     = players.MaxPlayers or 0
+    local pingMs         = getPingMs()
+    local memMb          = getMemoryMB()
+    local uptime         = formatDuration(tick() - startTime)
+
+    local lines = {}
+
+    table.insert(lines, string.format("PlaceId   : %d", game.PlaceId or 0))
+    table.insert(lines, string.format("JobId     : %s", tostring(game.JobId or "N/A")))
+    table.insert(lines, string.format("Players   : %d / %d", currentPlayers, maxPlayers))
+
+    local perf = {}
+
+    if pingMs then
+        table.insert(perf, string.format("Ping ~ %d ms", pingMs))
     end
-    return nil
+
+    table.insert(perf, string.format("FPS ~ %.1f", smoothFPS))
+
+    if memMb then
+        table.insert(perf, string.format("Lua Mem ~ %.1f MB", memMb))
+    end
+
+    table.insert(lines, "Performa : " .. table.concat(perf, "  |  "))
+    table.insert(lines, string.format("Uptime   : %s", uptime))
+
+    summaryLabel.Text = table.concat(lines, "\n")
 end
 
-local function trySetClipboard(str)
-    if not str or str == "" then return end
-    pcall(function()
-        setclipboard(str)
+task.spawn(function()
+    while summaryCard.Parent do
+        refreshSummary()
+        task.wait(1)
+    end
+end)
+
+--==========================================================
+-- CARD 2: TOMBOL UTILITAS SERVER (REJOIN, HOP, COPY ID)
+--==========================================================
+local actionCard = makeCard(86)
+makeSectionTitle(actionCard, "Utilitas Server")
+
+local btnHolder = Instance.new("Frame")
+btnHolder.Name = "ButtonHolder"
+btnHolder.Size = UDim2.new(1, -16, 0, 40)
+btnHolder.Position = UDim2.new(0, 8, 0, 34)
+btnHolder.BackgroundTransparency = 1
+btnHolder.Parent = actionCard
+
+local btnLayout = Instance.new("UIListLayout")
+btnLayout.FillDirection = Enum.FillDirection.Horizontal
+btnLayout.SortOrder = Enum.SortOrder.LayoutOrder
+btnLayout.Padding = UDim.new(0, 6)
+btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+btnLayout.Parent = btnHolder
+
+local function makeSmallButton(text)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 120, 1, 0)
+    b.BackgroundColor3 = Color3.fromRGB(210, 220, 255)
+    b.BorderSizePixel = 0
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 12
+    b.TextColor3 = Color3.fromRGB(50, 60, 110)
+    b.Text = text
+    b.AutoButtonColor = true
+    b.Parent = btnHolder
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 10)
+    c.Parent = b
+
+    local s = Instance.new("UIStroke")
+    s.Thickness = 1
+    s.Color = Color3.fromRGB(160, 170, 220)
+    s.Transparency = 0.3
+    s.Parent = b
+
+    b.MouseEnter:Connect(function()
+        axaTween(b, 0.12, {BackgroundColor3 = Color3.fromRGB(225, 230, 255)})
     end)
+    b.MouseLeave:Connect(function()
+        axaTween(b, 0.16, {BackgroundColor3 = Color3.fromRGB(210, 220, 255)})
+    end)
+
+    return b
 end
 
---==========================================================
---  KARTU INFO SERVER (ATAS)
---==========================================================
+local rejoinBtn     = makeSmallButton("🔁 Rejoin Server")
+local hopBtn        = makeSmallButton("🌐 Server Hop")
+local copyJobBtn    = makeSmallButton("📋 Copy JobId")
+local copyPlaceBtn  = makeSmallButton("📋 Copy PlaceId")
 
-local infoCard = Instance.new("Frame")
-infoCard.Name = "InfoCard"
-infoCard.Size = UDim2.new(1, -12, 0, 130)
-infoCard.Position = UDim2.new(0, 6, 0, 60)
-infoCard.BackgroundColor3 = Color3.fromRGB(235, 238, 252)
-infoCard.BorderSizePixel = 0
-infoCard.Parent = frame
+rejoinBtn.MouseButton1Click:Connect(function()
+    notify("Rejoin", "Menghubungkan ulang ke server ini...", 1.5)
+    local ok = pcall(function()
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+    end)
+    if not ok then
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, player)
+        end)
+    end
+end)
 
-local infoCorner = Instance.new("UICorner")
-infoCorner.CornerRadius = UDim.new(0, 10)
-infoCorner.Parent = infoCard
-
-local infoStroke = Instance.new("UIStroke")
-infoStroke.Thickness = 1
-infoStroke.Color = Color3.fromRGB(200, 205, 230)
-infoStroke.Transparency = 0.3
-infoStroke.Parent = infoCard
-
-local infoTitle = Instance.new("TextLabel")
-infoTitle.Name = "InfoTitle"
-infoTitle.Size = UDim2.new(1, -10, 0, 20)
-infoTitle.Position = UDim2.new(0, 6, 0, 6)
-infoTitle.BackgroundTransparency = 1
-infoTitle.Font = Enum.Font.GothamBold
-infoTitle.TextSize = 13
-infoTitle.TextXAlignment = Enum.TextXAlignment.Left
-infoTitle.TextColor3 = Color3.fromRGB(50, 50, 80)
-infoTitle.Text = "Ringkasan Server"
-infoTitle.Parent = infoCard
-
--- helper buat row kecil di dalam infoCard
-local function makeStatRow(offsetY, labelText)
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -12, 0, 18)
-    row.Position = UDim2.new(0, 6, 0, offsetY)
-    row.BackgroundTransparency = 1
-    row.Parent = infoCard
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.40, -4, 1, 0)
-    label.Position = UDim2.new(0, 0, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextColor3 = Color3.fromRGB(90, 90, 125)
-    label.Text = labelText
-    label.Parent = row
-
-    local value = Instance.new("TextLabel")
-    value.Size = UDim2.new(0.60, 0, 1, 0)
-    value.Position = UDim2.new(0.40, 0, 0, 0)
-    value.BackgroundTransparency = 1
-    value.Font = Enum.Font.Code
-    value.TextSize = 12
-    value.TextXAlignment = Enum.TextXAlignment.Right
-    value.TextColor3 = Color3.fromRGB(40, 40, 80)
-    value.Text = "-"
-    value.Parent = row
-
-    return value
-end
-
-local jobIdValue     = makeStatRow(32,  "JobId")
-local placeIdValue   = makeStatRow(52,  "PlaceId")
-local playersValue   = makeStatRow(72,  "Players")
-local pingValue      = makeStatRow(92,  "Ping")
-local fpsValue       = makeStatRow(112, "FPS / Uptime")
-
--- Tombol kecil copy JobId & PlaceId
-local copyJobBtn = Instance.new("TextButton")
-copyJobBtn.Name = "CopyJobBtn"
-copyJobBtn.Size = UDim2.new(0, 90, 0, 22)
-copyJobBtn.Position = UDim2.new(1, -96, 0, 6)
-copyJobBtn.BackgroundColor3 = Color3.fromRGB(210, 220, 255)
-copyJobBtn.AutoButtonColor = true
-copyJobBtn.Font = Enum.Font.GothamBold
-copyJobBtn.TextSize = 11
-copyJobBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
-copyJobBtn.Text = "Copy JobId"
-copyJobBtn.Parent = infoCard
-
-local cjCorner = Instance.new("UICorner")
-cjCorner.CornerRadius = UDim.new(0, 8)
-cjCorner.Parent = copyJobBtn
-
-local copyPlaceBtn = Instance.new("TextButton")
-copyPlaceBtn.Name = "CopyPlaceBtn"
-copyPlaceBtn.Size = UDim2.new(0, 90, 0, 22)
-copyPlaceBtn.Position = UDim2.new(1, -96, 0, 30)
-copyPlaceBtn.BackgroundColor3 = Color3.fromRGB(225, 230, 255)
-copyPlaceBtn.AutoButtonColor = true
-copyPlaceBtn.Font = Enum.Font.GothamBold
-copyPlaceBtn.TextSize = 11
-copyPlaceBtn.TextColor3 = Color3.fromRGB(40, 60, 110)
-copyPlaceBtn.Text = "Copy PlaceId"
-copyPlaceBtn.Parent = infoCard
-
-local cpCorner = Instance.new("UICorner")
-cpCorner.CornerRadius = UDim.new(0, 8)
-cpCorner.Parent = copyPlaceBtn
+hopBtn.MouseButton1Click:Connect(function()
+    notify("Server Hop", "Mencoba pindah ke server publik lain...", 1.5)
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player)
+    end)
+end)
 
 copyJobBtn.MouseButton1Click:Connect(function()
-    local jid = game.JobId or ""
-    if jid == "" then
-        safeNotify("Server Dashboard", "JobId tidak tersedia.", 2)
-        return
+    local text = tostring(game.JobId)
+    local ok = pcall(function()
+        setclipboard(text)
+    end)
+    if ok then
+        notify("Copy JobId", "JobId disalin ke clipboard.", 1.5)
+    else
+        notify("Copy JobId", text, 2)
     end
-    trySetClipboard(jid)
-    safeNotify("Server Dashboard", "JobId disalin ke clipboard.", 1.5)
 end)
 
 copyPlaceBtn.MouseButton1Click:Connect(function()
-    local pid = tostring(game.PlaceId or "")
-    if pid == "" then
-        safeNotify("Server Dashboard", "PlaceId tidak tersedia.", 2)
-        return
+    local text = tostring(game.PlaceId)
+    local ok = pcall(function()
+        setclipboard(text)
+    end)
+    if ok then
+        notify("Copy PlaceId", "PlaceId disalin ke clipboard.", 1.5)
+    else
+        notify("Copy PlaceId", text, 2)
     end
-    trySetClipboard(pid)
-    safeNotify("Server Dashboard", "PlaceId disalin ke clipboard.", 1.5)
 end)
 
 --==========================================================
---  LIST PLAYER DI SERVER
+-- CARD 3: DAFTAR PLAYER ONLINE
 --==========================================================
+local playersCard = makeCard(200)
+makeSectionTitle(playersCard, "Daftar Player Online")
 
-local playersLabel = Instance.new("TextLabel")
-playersLabel.Name = "PlayersLabel"
-playersLabel.Size = UDim2.new(1, -10, 0, 20)
-playersLabel.Position = UDim2.new(0, 5, 0, 196)
-playersLabel.BackgroundTransparency = 1
-playersLabel.Font = Enum.Font.GothamBold
-playersLabel.TextSize = 13
-playersLabel.TextXAlignment = Enum.TextXAlignment.Left
-playersLabel.TextColor3 = Color3.fromRGB(50, 50, 80)
-playersLabel.Text = "Pemain di Server"
-playersLabel.Parent = frame
+local subPlayers = makeSectionSub(
+    playersCard,
+    "Klik nama untuk highlight baris. LocalPlayer ditandai warna biru muda.",
+    28
+)
 
-local playerList = Instance.new("ScrollingFrame")
-playerList.Name = "PlayerList"
-playerList.Position = UDim2.new(0, 6, 0, 220)
-playerList.Size = UDim2.new(1, -12, 1, -226)
-playerList.BackgroundTransparency = 1
-playerList.BorderSizePixel = 0
-playerList.ScrollBarThickness = 5
-playerList.CanvasSize = UDim2.new(0, 0, 0, 0)
-playerList.Parent = frame
+local listHolder = Instance.new("Frame")
+listHolder.Name = "ListHolder"
+listHolder.Size = UDim2.new(1, -16, 0, 140)
+listHolder.Position = UDim2.new(0, 8, 0, 60)
+listHolder.BackgroundColor3 = Color3.fromRGB(232, 235, 246)
+listHolder.BorderSizePixel = 0
+listHolder.Parent = playersCard
 
-local playerLayout = Instance.new("UIListLayout")
-playerLayout.FillDirection = Enum.FillDirection.Vertical
-playerLayout.SortOrder = Enum.SortOrder.Name
-playerLayout.Padding = UDim.new(0, 4)
-playerLayout.Parent = playerList
+local listCorner = Instance.new("UICorner")
+listCorner.CornerRadius = UDim.new(0, 10)
+listCorner.Parent = listHolder
 
-playerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    playerList.CanvasSize = UDim2.new(0, 0, 0, playerLayout.AbsoluteContentSize.Y + 6)
+local listStroke = Instance.new("UIStroke")
+listStroke.Thickness = 1
+listStroke.Color = Color3.fromRGB(200, 205, 225)
+listStroke.Transparency = 0.4
+listStroke.Parent = listHolder
+
+local innerScroll = Instance.new("ScrollingFrame")
+innerScroll.Name = "PlayerScroll"
+innerScroll.Size = UDim2.new(1, -8, 1, -8)
+innerScroll.Position = UDim2.new(0, 4, 0, 4)
+innerScroll.BackgroundTransparency = 1
+innerScroll.BorderSizePixel = 0
+innerScroll.ScrollBarThickness = 4
+innerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+innerScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+innerScroll.Parent = listHolder
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.FillDirection = Enum.FillDirection.Vertical
+listLayout.SortOrder = Enum.SortOrder.Name
+listLayout.Padding = UDim.new(0, 4)
+listLayout.Parent = innerScroll
+
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    innerScroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 6)
 end)
 
-local playerRows = {}  -- [Player] = { distanceLabel = ..., statusLabel = ..., row = ... }
+local rowMap = {}
+local highlightedRow = nil
 
-local STUDS_TO_METERS = 1
+local function setRowHighlight(row, on)
+    if not row or not row:IsA("Frame") then return end
+    local baseColor = row:GetAttribute("BaseColor")
+    if on then
+        axaTween(row, 0.12, {BackgroundColor3 = Color3.fromRGB(210, 230, 255)})
+    elseif baseColor then
+        row.BackgroundColor3 = baseColor
+    end
+end
 
-local function buildPlayerRow(plr)
+local function buildRow(plr)
     local row = Instance.new("Frame")
     row.Name = plr.Name
-    row.Size = UDim2.new(1, 0, 0, 38)
-    row.BackgroundColor3 = Color3.fromRGB(230, 232, 246)
-    row.BackgroundTransparency = 0.1
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.BackgroundColor3 = Color3.fromRGB(244, 246, 252)
     row.BorderSizePixel = 0
-    row.Parent = playerList
+    row.Parent = innerScroll
 
-    local rc = Instance.new("UICorner")
-    rc.CornerRadius = UDim.new(0, 8)
-    rc.Parent = row
-
-    local rs = Instance.new("UIStroke")
-    rs.Thickness = 1
-    rs.Color = Color3.fromRGB(200, 200, 220)
-    rs.Transparency = 0.3
-    rs.Parent = row
-
+    local baseColor = row.BackgroundColor3
     if plr == player then
-        row.BackgroundColor3 = Color3.fromRGB(210, 230, 255)
-        rs.Color             = Color3.fromRGB(120, 160, 235)
+        baseColor = Color3.fromRGB(210, 230, 255)
+        row.BackgroundColor3 = baseColor
     end
+    row:SetAttribute("BaseColor", baseColor)
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = row
 
     local nameLabel = Instance.new("TextLabel")
     nameLabel.Name = "Name"
-    nameLabel.Size = UDim2.new(0.45, -6, 1, 0)
+    nameLabel.Size = UDim2.new(0.55, -6, 1, 0)
     nameLabel.Position = UDim2.new(0, 6, 0, 0)
     nameLabel.BackgroundTransparency = 1
-    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.Font = Enum.Font.GothamSemibold
     nameLabel.TextSize = 12
     nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.TextColor3 = Color3.fromRGB(50, 50, 80)
+    nameLabel.TextColor3 = Color3.fromRGB(55, 60, 90)
     nameLabel.Text = string.format("%s (@%s)", plr.DisplayName or plr.Name, plr.Name)
     nameLabel.Parent = row
 
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Name = "Status"
-    statusLabel.Size = UDim2.new(0.18, 0, 1, 0)
-    statusLabel.Position = UDim2.new(0.45, 0, 0, 0)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.Font = Enum.Font.Gotham
-    statusLabel.TextSize = 11
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Center
-    statusLabel.TextColor3 = Color3.fromRGB(90, 90, 120)
-    statusLabel.Text = "Player"
-    statusLabel.Parent = row
+    local idLabel = Instance.new("TextLabel")
+    idLabel.Name = "UserId"
+    idLabel.Size = UDim2.new(0.25, -6, 1, 0)
+    idLabel.Position = UDim2.new(0.55, 0, 0, 0)
+    idLabel.BackgroundTransparency = 1
+    idLabel.Font = Enum.Font.Code
+    idLabel.TextSize = 12
+    idLabel.TextXAlignment = Enum.TextXAlignment.Left
+    idLabel.TextColor3 = Color3.fromRGB(90, 95, 120)
+    idLabel.Text = tostring(plr.UserId)
+    idLabel.Parent = row
 
-    local distanceLabel = Instance.new("TextLabel")
-    distanceLabel.Name = "Distance"
-    distanceLabel.Size = UDim2.new(0.37, -6, 1, 0)
-    distanceLabel.Position = UDim2.new(0.63, 0, 0, 0)
-    distanceLabel.BackgroundTransparency = 1
-    distanceLabel.Font = Enum.Font.Code
-    distanceLabel.TextSize = 11
-    distanceLabel.TextXAlignment = Enum.TextXAlignment.Right
-    distanceLabel.TextColor3 = Color3.fromRGB(50, 70, 100)
-    distanceLabel.Text = "-- m"
-    distanceLabel.Parent = row
+    local meLabel = Instance.new("TextLabel")
+    meLabel.Name = "Tag"
+    meLabel.Size = UDim2.new(0.2, -6, 1, 0)
+    meLabel.Position = UDim2.new(0.8, 0, 0, 0)
+    meLabel.BackgroundTransparency = 1
+    meLabel.Font = Enum.Font.GothamBold
+    meLabel.TextSize = 11
+    meLabel.TextXAlignment = Enum.TextXAlignment.Right
+    meLabel.TextColor3 = Color3.fromRGB(120, 130, 170)
+    meLabel.Text = (plr == player) and "YOU" or ""
+    meLabel.Parent = row
 
-    playerRows[plr] = {
-        row          = row,
-        statusLabel  = statusLabel,
-        distanceLabel = distanceLabel,
-    }
-
-    -- Set status friend / player
-    local isFriend = false
-    pcall(function()
-        isFriend = player:IsFriendsWith(plr.UserId)
+    row.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if highlightedRow and highlightedRow ~= row then
+                setRowHighlight(highlightedRow, false)
+            end
+            highlightedRow = row
+            setRowHighlight(row, true)
+        end
     end)
-    if plr == player then
-        statusLabel.Text = "Kamu"
-        statusLabel.TextColor3 = Color3.fromRGB(70, 120, 200)
-    elseif isFriend then
-        statusLabel.Text = "Friend"
-        statusLabel.TextColor3 = Color3.fromRGB(60, 150, 100)
-    else
-        statusLabel.Text = "Player"
-        statusLabel.TextColor3 = Color3.fromRGB(90, 90, 120)
-    end
+
+    row.MouseEnter:Connect(function()
+        if row ~= highlightedRow then
+            axaTween(row, 0.10, {BackgroundColor3 = Color3.fromRGB(234, 238, 252)})
+        end
+    end)
+
+    row.MouseLeave:Connect(function()
+        if row ~= highlightedRow then
+            setRowHighlight(row, false)
+        end
+    end)
+
+    rowMap[plr] = row
 end
 
 local function rebuildPlayerList()
-    for _, child in ipairs(playerList:GetChildren()) do
-        if child:IsA("Frame") then
-            child:Destroy()
-        end
+    for _, row in pairs(rowMap) do
+        if row then row:Destroy() end
     end
-    playerRows = {}
+    rowMap = {}
 
-    local listPlayers = players:GetPlayers()
-    table.sort(listPlayers, function(a, b)
-        local aSelf = (a == player)
-        local bSelf = (b == player)
-        if aSelf ~= bSelf then
-            return aSelf -- local player di atas
+    local list = players:GetPlayers()
+    table.sort(list, function(a, b)
+        -- LocalPlayer di atas, sisanya sort by Name
+        if a == player then
+            return true
+        elseif b == player then
+            return false
         end
-        return (a.DisplayName or a.Name) < (b.DisplayName or b.Name)
+        return a.Name:lower() < b.Name:lower()
     end)
 
-    for _, plr in ipairs(listPlayers) do
-        buildPlayerRow(plr)
+    for _, plr in ipairs(list) do
+        buildRow(plr)
     end
 end
 
-players.PlayerAdded:Connect(function(plr)
-    buildPlayerRow(plr)
+players.PlayerAdded:Connect(function()
+    rebuildPlayerList()
 end)
 
 players.PlayerRemoving:Connect(function(plr)
-    local rowInfo = playerRows[plr]
-    if rowInfo and rowInfo.row then
-        rowInfo.row:Destroy()
+    local row = rowMap[plr]
+    if row then
+        row:Destroy()
+        rowMap[plr] = nil
     end
-    playerRows[plr] = nil
 end)
 
 rebuildPlayerList()
-
---==========================================================
---  UPDATE LOOP (FPS, PING, UPTIME, JARAK, DLL)
---==========================================================
-
--- Set nilai stat yang sifatnya statis / jarang berubah
-jobIdValue.Text   = game.JobId ~= "" and game.JobId or "(non-standard server)"
-placeIdValue.Text = tostring(game.PlaceId)
-
-local function updatePlayersCount()
-    local count = #players:GetPlayers()
-    local max   = players.MaxPlayers or "?"
-    playersValue.Text = string.format("%d / %s", count, tostring(max))
-end
-
-updatePlayersCount()
-players.PlayerAdded:Connect(updatePlayersCount)
-players.PlayerRemoving:Connect(updatePlayersCount)
-
--- FPS + ping + uptime diupdate berkala
-local accumTime   = 0
-local frameCount  = 0
-local currentFPS  = 0
-
-runService.RenderStepped:Connect(function(dt)
-    -- Hitung FPS approx
-    frameCount += 1
-    accumTime  += dt
-    if accumTime >= 0.5 then
-        currentFPS = math.floor((frameCount / accumTime) + 0.5)
-        frameCount = 0
-        accumTime  = 0
-    end
-
-    -- Ping
-    local pingMs = getPingMs()
-    if pingMs then
-        pingValue.Text = string.format("%.0f ms", pingMs)
-    else
-        pingValue.Text = "-- ms"
-    end
-
-    -- Uptime (pakai DistributedGameTime)
-    local uptimeSec = workspace.DistributedGameTime
-    fpsValue.Text = string.format("%d FPS  •  %s", currentFPS, formatSeconds(uptimeSec))
-
-    -- Update jarak setiap player
-    local myChar = player.Character
-    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    for plr, info in pairs(playerRows) do
-        if plr ~= player then
-            local char = plr.Character
-            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-            if myHRP and hrp then
-                local distStuds = (hrp.Position - myHRP.Position).Magnitude
-                local meters    = math.floor(distStuds * STUDS_TO_METERS + 0.5)
-                info.distanceLabel.Text = string.format("%d m", meters)
-            else
-                info.distanceLabel.Text = "-- m"
-            end
-        else
-            info.distanceLabel.Text = "0 m"
-        end
-    end
-end)
+refreshSummary()
