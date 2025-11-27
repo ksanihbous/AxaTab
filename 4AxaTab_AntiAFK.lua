@@ -1,14 +1,23 @@
 --==========================================================
 --  4AxaTab_AntiAFK.lua
---  Env:
+--  Env (dari CORE, tapi disiapkan fallback):
 --    TAB_FRAME, LocalPlayer, RunService, StarterGui, VirtualInputManager, Players
 --==========================================================
 
+------------------- SERVICES & ENV -------------------
+local Players              = Players              or game:GetService("Players")
+local RunService           = RunService           or game:GetService("RunService")
+local StarterGui           = StarterGui           or game:GetService("StarterGui")
+local LocalPlayer          = LocalPlayer          or Players.LocalPlayer
+
+local okVIM, vimSvc = pcall(function()
+    return game:GetService("VirtualInputManager")
+end)
+local VirtualInputManager  = VirtualInputManager or (okVIM and vimSvc) or nil
+
 local antiTabFrame = TAB_FRAME
 
-------------------------------------------------------
--- UI HEADER
-------------------------------------------------------
+------------------- UI HEADER -------------------
 local antiHeader = Instance.new("TextLabel")
 antiHeader.Name = "Header"
 antiHeader.Size = UDim2.new(1, -10, 0, 22)
@@ -32,7 +41,7 @@ antiSub.TextColor3 = Color3.fromRGB(90, 90, 120)
 antiSub.TextXAlignment = Enum.TextXAlignment.Left
 antiSub.TextYAlignment = Enum.TextYAlignment.Top
 antiSub.TextWrapped = true
-antiSub.Text = "Menahan idle kick Roblox + auto respawn + auto restart route (AxaXyzReplayUI)."
+antiSub.Text = "Menahan idle kick Roblox + auto respawn + auto restart route."
 antiSub.Parent = antiTabFrame
 
 local antiToggleBtn = Instance.new("TextButton")
@@ -89,7 +98,7 @@ antiUptimePlay.Text = "Uptime Play: 00:00:00"
 antiUptimePlay.Parent = antiTabFrame
 
 ------------------------------------------------------
--- UPTIME STATE
+-- FORMAT UPTIME
 ------------------------------------------------------
 local function formatHMS(sec)
     sec = math.max(0, math.floor(sec or 0))
@@ -100,17 +109,15 @@ local function formatHMS(sec)
     return string.format("%02d:%02d:%02d", h, m, s)
 end
 
--- mulai dari saat tab/script ini hidup
-local playStartTime        = time()
-local antiStartTime        = nil    -- waktu ON terakhir
-local antiLastUptimeSec    = 0      -- angka yang ditampilkan
-local antiWasEnabledLast   = false  -- edge detector
+-- state uptime (dt-based)
+local playSeconds      = 0       -- selalu jalan
+local antiAFKSeconds   = 0       -- hanya nambah saat AntiAFK ON
+local uptimeUpdateAcc  = 0       -- timer untuk update UI
 
 ------------------------------------------------------
--- ==== AntiAFK+ LOGIC ====
+-- ==== AntiAFK+ LOGIC (asli, dipertahankan) ====
 ------------------------------------------------------
 local player = LocalPlayer
-local Players = Players
 
 local function notify(title, text, dur)
     pcall(function()
@@ -151,7 +158,7 @@ local stillTime, totalDist = 0, 0
 local lastAutoStart, justRestarted = 0, false
 local afterRespawn = false
 
-local antiEnabled = false
+local antiEnabled  = false
 local antiIdleConn = nil
 
 local function setStatus(text, color)
@@ -198,7 +205,7 @@ local function findToggleButtonOnce()
     for _, g in ipairs(game:GetDescendants()) do
         if g:IsA("TextButton") then
             local txt = g.Text or ""
-            if (string.find(txt, "Start") or string.find(txt, "Stop")) then
+            if string.find(txt, "Start") or string.find(txt, "Stop") then
                 local p = g.Parent
                 if p and (p.Name == BUTTON_ROOT_NAME or (p.Parent and p.Parent.Name == BUTTON_ROOT_NAME)) then
                     return g
@@ -270,7 +277,7 @@ local function setAntiEnabledUI(state)
 end
 
 ------------------------------------------------------
--- LOOP ANTI + UPTIME (1 DETIK)
+-- LOOP ANTI AFK (LOGIC UTAMA)
 ------------------------------------------------------
 local antiLoopStarted = false
 
@@ -282,48 +289,10 @@ local function startAntiLoop()
         while true do
             task.wait(1)
 
-            -- ==========================================
-            -- UPTIME: jalan terus tiap detik
-            -- ==========================================
-            local now = time()
-
-            -- Uptime Play: selalu naik
-            if antiUptimePlay then
-                local playSec = now - playStartTime
-                antiUptimePlay.Text = "Uptime Play: " .. formatHMS(playSec)
-            end
-
-            -- Uptime AntiAFK:
-            --  - ON: hitung dari saat ON terakhir
-            --  - OFF: angka terakhir dibekukan
-            if antiEnabled then
-                if not antiWasEnabledLast then
-                    antiWasEnabledLast = true
-                    antiStartTime      = now
-                    antiLastUptimeSec  = 0
-                else
-                    antiLastUptimeSec = now - (antiStartTime or now)
-                end
-            else
-                if antiWasEnabledLast then
-                    antiWasEnabledLast = false
-                end
-            end
-
-            if antiUptimeAFK then
-                antiUptimeAFK.Text = "Uptime AntiAFK: " .. formatHMS(antiLastUptimeSec)
-            end
-
-            -- ==========================================
-            -- Kalau AntiAFK OFF, logic lain stop di sini
-            -- ==========================================
             if not antiEnabled then
                 continue
             end
 
-            -- ==========================================
-            -- LOGIC ANTI AFK+ (asli, tidak diubah)
-            -- ==========================================
             if not hrp or not hrp.Parent then
                 hrp = getHRP()
                 if hrp then
@@ -369,6 +338,7 @@ local function startAntiLoop()
                 continue
             end
 
+            local now = time()
             if AUTO_START and stillTime >= STOP_DELAY and totalDist < 0.5 and (now - lastAutoStart > RETRY_INTERVAL) then
                 if not toggleBtn or not toggleBtn.Parent then
                     toggleBtn = waitForToggleButton()
@@ -424,11 +394,6 @@ local function enableAntiAFK()
         end)
     end
 
-    -- setiap ON lagi: uptime AntiAFK mulai dari 0
-    antiStartTime     = time()
-    antiLastUptimeSec = 0
-    antiWasEnabledLast = true
-
     setAntiEnabledUI(true)
     push("UI AntiAFK+ aktif ✅")
     startAntiLoop()
@@ -436,14 +401,6 @@ end
 
 local function disableAntiAFK()
     if not antiEnabled then return end
-
-    -- saat OFF, uptime AntiAFK dibekukan di nilai terakhir
-    if antiStartTime then
-        antiLastUptimeSec = time() - antiStartTime
-        antiStartTime = nil
-    end
-    antiWasEnabledLast = false
-
     setAntiEnabledUI(false)
     stillTime, totalDist, justRestarted = 0, 0, false
     lastState = nil
@@ -459,10 +416,34 @@ antiToggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- expose untuk core kalau mau matikan saat Close
+-- expose untuk core (Close UI)
 _G.AxaHub_AntiAFK_Disable = disableAntiAFK
 
 ------------------------------------------------------
--- DEFAULT: AntiAFK LANGSUNG AKTIF
+-- UPTIME LOOP (RunService.Heartbeat, realtime)
+------------------------------------------------------
+RunService.Heartbeat:Connect(function(dt)
+    -- Uptime Play: selalu naik
+    playSeconds += dt
+
+    -- Uptime AntiAFK: naik hanya saat ON
+    if antiEnabled then
+        antiAFKSeconds += dt
+    end
+
+    uptimeUpdateAcc += dt
+    if uptimeUpdateAcc >= 1 then
+        uptimeUpdateAcc = 0
+        if antiUptimePlay then
+            antiUptimePlay.Text = "Uptime Play: " .. formatHMS(playSeconds)
+        end
+        if antiUptimeAFK then
+            antiUptimeAFK.Text = "Uptime AntiAFK: " .. formatHMS(antiAFKSeconds)
+        end
+    end
+end)
+
+------------------------------------------------------
+-- DEFAULT: AntiAFK langsung aktif
 ------------------------------------------------------
 enableAntiAFK()
