@@ -5,14 +5,20 @@
 --==========================================================
 
 local antiTabFrame = TAB_FRAME
-local player       = LocalPlayer
+
+-- Pastikan env aman
+local Players    = Players    or game:GetService("Players")
+local RunService = RunService or game:GetService("RunService")
+local StarterGui = StarterGui or game:GetService("StarterGui")
+local player     = LocalPlayer or Players.LocalPlayer
 
 ------------------------------------------------------
 -- WAKTU & FORMAT UPTIME
 ------------------------------------------------------
-local playStartTime      = os.time()   -- awal main (saat script/tab jalan)
-local antiStartTime      = nil         -- diisi saat AntiAFK di-enable
-local antiAccumulatedSec = 0           -- total durasi AntiAFK untuk 1 session (freeze saat OFF)
+-- Pakai time() (Roblox time) biar lebih stabil
+local playStartTime      = time()   -- awal main (saat script/tab jalan)
+local antiStartTime      = nil      -- diisi saat AntiAFK di-enable
+local antiAccumulatedSec = 0        -- total durasi AntiAFK di session (freeze saat OFF)
 
 local function formatHMS(sec)
     sec = math.max(0, math.floor(sec or 0))
@@ -178,9 +184,11 @@ local function clickButton(btn)
     local ok = pcall(function() btn:Activate() end)
     if ok then return end
 
-    local center = btn.AbsolutePosition + (btn.AbsoluteSize / 2)
-    VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
-    VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+    if VirtualInputManager then
+        local center = btn.AbsolutePosition + (btn.AbsoluteSize / 2)
+        VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+        VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+    end
 end
 
 local function getButtonText()
@@ -263,117 +271,142 @@ local function setAntiEnabledUI(state)
     end
 end
 
-local antiLoopStarted = false
+------------------------------------------------------
+-- TICK LOGIC (DIPANGGIL ~1X/DETIK)
+------------------------------------------------------
+local function tickAntiLoop()
+    local now = time()
+
+    -- Uptime Play: selalu jalan
+    if antiUptimePlay then
+        local playSec = now - playStartTime
+        antiUptimePlay.Text = "Uptime Play: " .. formatHMS(playSec)
+    end
+
+    -- Uptime AntiAFK:
+    --  - ON: accumulated + (now - antiStartTime)
+    --  - OFF: cuma accumulated (freeze)
+    if antiUptimeAFK then
+        local antiSec = antiAccumulatedSec
+        if antiEnabled and antiStartTime then
+            antiSec = antiAccumulatedSec + (now - antiStartTime)
+        end
+        antiUptimeAFK.Text = "Uptime AntiAFK: " .. formatHMS(antiSec)
+    end
+
+    -- Kalau AntiAFK OFF, logic lain tidak jalan
+    if not antiEnabled then
+        return
+    end
+
+    -- Pastikan HRP valid
+    if not hrp or not hrp.Parent then
+        hrp = getHRP()
+        if hrp then
+            lastPos = hrp.Position
+        end
+        stillTime, totalDist, justRestarted, lastState = 0, 0, false, nil
+        return
+    end
+
+    local dist = (hrp.Position - lastPos).Magnitude
+    totalDist += dist
+    lastPos = hrp.Position
+
+    if dist < MOVE_THRESHOLD then
+        stillTime += 1
+    else
+        stillTime, totalDist, justRestarted = 0, 0, false
+    end
+
+    if afterRespawn then
+        stillTime = 0
+        return
+    end
+
+    -- Status singkat
+    if stillTime == 0 then
+        setStatus("🟢 Running", Color3.fromRGB(100,255,100))
+        if lastState ~= "running" then
+            push("Running ✅")
+            lastState = "running"
+        end
+    elseif stillTime < RESPAWN_DELAY then
+        setStatus(("🟡 Idle %ds"):format(stillTime), Color3.fromRGB(255,255,150))
+        if lastState ~= "idle" and stillTime >= math.max(2, math.floor(RESPAWN_DELAY/2)) then
+            push(("Idle %ds"):format(stillTime))
+            lastState = "idle"
+        end
+    end
+
+    -- Auto respawn
+    if AUTO_RESPAWN and stillTime >= RESPAWN_DELAY then
+        print("["..BrandTitle().."] Auto respawn triggered.")
+        respawnChar()
+        stillTime, totalDist, justRestarted = 0, 0, false
+        return
+    end
+
+    -- Auto restart route
+    local now2 = time()
+    if AUTO_START and stillTime >= STOP_DELAY and totalDist < 0.5 and (now2 - lastAutoStart > RETRY_INTERVAL) then
+        if not toggleBtn or not toggleBtn.Parent then
+            toggleBtn = waitForToggleButton()
+        end
+        if justRestarted and (now2 - lastAutoStart) > (RETRY_INTERVAL * 2) then
+            justRestarted = false
+        end
+
+        if not justRestarted then
+            setStatus("🔵 Restarting Route...", Color3.fromRGB(100,150,255))
+            push("Restarting route... 🔄")
+
+            local text2 = getButtonText()
+            if string.find(text2, "stop") then
+                clickButton(toggleBtn)
+                task.wait(0.6)
+            end
+            if string.find(getButtonText(), "start") then
+                clickButton(toggleBtn)
+                lastAutoStart = now2
+                justRestarted = true
+                setStatus("🟢 Running", Color3.fromRGB(100,255,100))
+                push("Running ✅")
+                lastState = "running"
+            end
+        end
+
+        stillTime, totalDist = 0, 0
+    end
+end
+
+------------------------------------------------------
+-- START LOOP (HEARTBEAT + PCALL)
+------------------------------------------------------
+local loopHooked = false
+local accumDt    = 0
 
 local function startAntiLoop()
-    if antiLoopStarted then return end
-    antiLoopStarted = true
+    if loopHooked then return end
+    loopHooked = true
 
-    task.spawn(function()
-        while true do
-            task.wait(1)
+    RunService.Heartbeat:Connect(function(dt)
+        accumDt += dt
+        if accumDt < 1 then
+            return
+        end
+        accumDt = 0
 
-            -- UPDATE UPTIME SETIAP DETIK
-            local now = os.time()
-
-            -- Uptime Play: selalu jalan
-            if antiUptimePlay then
-                local playSec = now - playStartTime
-                antiUptimePlay.Text = "Uptime Play: " .. formatHMS(playSec)
-            end
-
-            -- Uptime AntiAFK:
-            --   - Saat ON: accumulated + (now - antiStartTime)
-            --   - Saat OFF: pakai accumulated saja (freeze)
-            if antiUptimeAFK then
-                local antiSec = antiAccumulatedSec
-                if antiEnabled and antiStartTime then
-                    antiSec = antiAccumulatedSec + (now - antiStartTime)
-                end
-                antiUptimeAFK.Text = "Uptime AntiAFK: " .. formatHMS(antiSec)
-            end
-
-            -- LOGIC ANTI AFK
-            if not antiEnabled then
-                continue
-            end
-
-            if not hrp or not hrp.Parent then
-                hrp = getHRP()
-                lastPos = hrp.Position
-                stillTime, totalDist, justRestarted, lastState = 0, 0, false, nil
-                continue
-            end
-
-            local dist = (hrp.Position - lastPos).Magnitude
-            totalDist += dist
-            lastPos = hrp.Position
-
-            if dist < MOVE_THRESHOLD then
-                stillTime += 1
-            else
-                stillTime, totalDist, justRestarted = 0, 0, false
-            end
-
-            if afterRespawn then
-                stillTime = 0
-                continue
-            end
-
-            if stillTime == 0 then
-                setStatus("🟢 Running", Color3.fromRGB(100,255,100))
-                if lastState ~= "running" then
-                    push("Running ✅")
-                    lastState = "running"
-                end
-            elseif stillTime < RESPAWN_DELAY then
-                setStatus(("🟡 Idle %ds"):format(stillTime), Color3.fromRGB(255,255,150))
-                if lastState ~= "idle" and stillTime >= math.max(2, math.floor(RESPAWN_DELAY/2)) then
-                    push(("Idle %ds"):format(stillTime))
-                    lastState = "idle"
-                end
-            end
-
-            if AUTO_RESPAWN and stillTime >= RESPAWN_DELAY then
-                print("["..BrandTitle().."] Auto respawn triggered.")
-                respawnChar()
-                stillTime, totalDist, justRestarted = 0, 0, false
-                continue
-            end
-
-            local now2 = time()
-            if AUTO_START and stillTime >= STOP_DELAY and totalDist < 0.5 and (now2 - lastAutoStart > RETRY_INTERVAL) then
-                if not toggleBtn or not toggleBtn.Parent then
-                    toggleBtn = waitForToggleButton()
-                end
-                if justRestarted and (now2 - lastAutoStart) > (RETRY_INTERVAL * 2) then
-                    justRestarted = false
-                end
-
-                if not justRestarted then
-                    setStatus("🔵 Restarting Route...", Color3.fromRGB(100,150,255))
-                    push("Restarting route... 🔄")
-
-                    local text2 = getButtonText()
-                    if string.find(text2, "stop") then
-                        clickButton(toggleBtn)
-                        task.wait(0.6)
-                    end
-                    if string.find(getButtonText(), "start") then
-                        clickButton(toggleBtn)
-                        lastAutoStart = now2
-                        justRestarted = true
-                        setStatus("🟢 Running", Color3.fromRGB(100,255,100))
-                        push("Running ✅")
-                        lastState = "running"
-                    end
-                end
-                stillTime, totalDist = 0, 0
-            end
+        local ok, err = pcall(tickAntiLoop)
+        if not ok then
+            warn("[AxaXyz AntiAFK] Loop error:", err)
         end
     end)
 end
 
+------------------------------------------------------
+-- ENABLE / DISABLE ANTI AFK
+------------------------------------------------------
 local function enableAntiAFK()
     if antiEnabled then return end
 
@@ -396,7 +429,7 @@ local function enableAntiAFK()
 
     -- Mulai session AntiAFK baru
     antiAccumulatedSec = 0
-    antiStartTime      = os.time()
+    antiStartTime      = time()
 
     setAntiEnabledUI(true)
     push("UI AntiAFK+ aktif ✅")
@@ -406,9 +439,9 @@ end
 local function disableAntiAFK()
     if not antiEnabled then return end
 
-    -- Freeze uptime di nilai terakhir (akumulasi)
+    -- Freeze uptime di nilai terakhir
     if antiStartTime then
-        antiAccumulatedSec = antiAccumulatedSec + (os.time() - antiStartTime)
+        antiAccumulatedSec = antiAccumulatedSec + (time() - antiStartTime)
         antiStartTime = nil
     end
 
